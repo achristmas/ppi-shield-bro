@@ -7,13 +7,16 @@ import * as wasmFeatureDetect from 'wasm-feature-detect';
 import mammoth from 'mammoth';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, Header, Footer, PageBreak, SectionType, ShadingType } from "docx";
 import { saveAs } from "file-saver";
+//import fake.js from './fake.js';
+import { piiToFakerMapping, getFakerFunctionForTag } from './fake.js';
+import { faker } from '@faker-js/faker';  
 //Setup onnxruntime 
 const ort = require('onnxruntime-web');
 
 //requires Cross-Origin-*-policy headers https://web.dev/coop-coep/
 /**
 const simdResolver = wasmFeatureDetect.simd().then(simdSupported => {
-    console.log("simd is supported? "+ simdSupported);
+    console.log("simd is sufpported? "+ simdSupported);
     if (simdSupported) {
       ort.env.wasm.numThreads = 3; 
       ort.env.wasm.simd = true;
@@ -58,6 +61,7 @@ const EMOJI_DEFAULT_DISPLAY = [
 
 var tokenIndexObj = ['O', 'B-PHONEIMEI', 'I-PHONEIMEI', 'B-JOBAREA', 'I-JOBAREA', 'B-FIRSTNAME', 'B-VEHICLEVIN', 'I-VEHICLEVIN', 'I-FIRSTNAME', 'B-AGE', 'B-AGE', 'B-GENDER', 'I-GENDER', 'B-HEIGHT', 'I-HEIGHT', 'B-BUILDINGNUMBER', 'I-BUILDINGNUMBER', 'B-MASKEDNUMBER', 'I-MASKEDNUMBER', 'B-PASSWORD', 'I-PASSWORD', 'B-DOB', 'I-DOB', 'B-IPV6', 'I-IPV6', 'B-NEARBYGPSCOORDINATE', 'I-NEARBYGPSCOORDINATE', 'B-USERAGENT', 'I-USERAGENT', 'B-TIME', 'I-TIME', 'B-JOBTITLE', 'I-JOBTITLE', 'B-COUNTY', 'B-EMAIL', 'I-EMAIL', 'B-ACCOUNTNUMBER', 'I-ACCOUNTNUMBER', 'B-PIN', 'I-PIN', 'B-EYECOLOR', 'I-EYECOLOR', 'B-LASTNAME', 'I-LASTNAME', 'B-IPV4', 'I-IPV4', 'B-DATE', 'I-DATE', 'B-STREET', 'I-STREET', 'B-CITY', 'I-CITY', 'B-PREFIX', 'I-PREFIX', 'B-MIDDLENAME', 'B-CREDITCARDISSUER', 'B-CREDITCARDNUMBER', 'I-CREDITCARDNUMBER', 'I-CREDITCARDISSUER', 'B-STATE', 'B-VEHICLEVRM', 'I-VEHICLEVRM', 'B-ORDINALDIRECTION','B-SEX', 'B-JOBTYPE', 'I-JOBTYPE', 'B-CURRENCYCODE', 'I-CURRENCYCODE', 'B-CURRENCYSYMBOL', 'B-AMOUNT', 'I-AMOUNT', 'B-ACCOUNTNAME', 'I-ACCOUNTNAME', 'I-STATE', 'B-BITCOINADDRESS', 'I-BITCOINADDRESS', 'B-LITECOINADDRESS', 'I-LITECOINADDRESS', 'B-PHONENUMBER', 'I-PHONENUMBER', 'B-MAC', 'I-MAC', 'B-CURRENCY', 'B-IBAN', 'I-IBAN', 'B-COMPANYNAME', 'I-COMPANYNAME', 'B-CURRENCYNAME', 'I-CURRENCYNAME', 'I-CURRENCYSYMBOL', 'B-ZIPCODE', 'I-ZIPCODE', 'B-SSN', 'I-SSN', 'I-CURRENCY', 'B-URL', 'I-URL', 'B-IP', 'I-IP', 'B-SECONDARYADDRESS', 'I-SECONDARYADDRESS', 'B-USERNAME', 'I-USERNAME', 'B-ETHEREUMADDRESS', 'I-ETHEREUMADDRESS', 'B-CREDITCARDCVV', 'I-AGE', 'I-MIDDLENAME', 'I-COUNTY', 'B-BIC', 'I-BIC', 'I-CREDITCARDCVV', 'I-ORDINAL','I-SEX', 'O']
 
+var sanatization_sub_keys = new Array();
 
 
 function labelToIds(label) {
@@ -147,246 +151,141 @@ async function initializeSession() {
   }
 } 
 
-async function infrenceStart(text, fileName="file.docx"){
-  //create a notifatoin that pii infrence is about to start in a visually pleasing way
+function removeNoFilesUploadedRow() {
+  const table = document.getElementById('resultsTable');
+  const rows = table.getElementsByTagName('tr');
+  // if (rows.length === 2) {
+  //   const cells = rows[1].getElementsByTagName('td');
+  //   if (cells.length === 1 && cells[0].textContent.indexOf('No files uploaded yet') > -1) {
+  //     table.deleteRow(1);
+  //   }
+  // }
+}
+
+async function infrenceStart(text, fileName="file.docx") {
+  //create a notification that pii inference is about to start in a visually pleasing way
   const notification = document.createElement('div');
   notification.className = 'notification';
   notification.textContent = 'PII Inference is starting...';
   //remove any existing notifications
   const existingNotifications = document.getElementsByClassName('notification');
   for (let i = 0; i < existingNotifications.length; i++) {
-    document.body.removeChild(existingNotifications[i]);
+    if (existingNotifications[i].parentNode) {
+      existingNotifications[i].parentNode.removeChild(existingNotifications[i]);
+    }
   }
   document.body.appendChild(notification);
   
-
+  removeNoFilesUploadedRow();
   
   //clean the HTML tags from the text and special characters
   
-  try{
-  //let newSession = ort.InferenceSession.create(model2, options);
-  
-    
-      await initializeSession();
-      downLoadingModel = false;
+  try {
+    await initializeSession();
+    downLoadingModel = false;
     //warmup the VM
-for(var i = 0; i < 1; i++) {
-  console.log("Inference warmup " + i);
-  lm_inference_TokenClasification(text).then(([processedText, processedWords]) => {
-    //remove the "No Files Uploaded" row
-    const table = document.getElementById('resultsTable');
-    const rows = table.getElementsByTagName('tr');
-    if (rows.length === 2) {
-      //verify if the row contains "No Files Uploaded"
-      const cells = rows[1].getElementsByTagName('td');
-      if (cells.length === 1 && cells[0].textContent === 'No files uploaded') {
-        table.deleteRow(1);
-      }
-    } 
+    for (var i = 0; i < 1; i++) {
+      console.log("Inference warmup " + i);
+      return lm_inference_TokenClasification(text,fileName).then((processedText) => {
+        // Properly decode HTML entities in the processed text
+        const decodeHTMLEntities = (text) => {
+          const textarea = document.createElement('textarea');
+          textarea.innerHTML = text;
+          return textarea.value;
+        };
 
-    // Properly decode HTML entities in the processed text
-    const decodeHTMLEntities = (text) => {
-      const textarea = document.createElement('textarea');
-      textarea.innerHTML = text;
-      return textarea.value;
-    };
+        // Clean up PII labels for better HTML compatibility
+        const cleanProcessedText = (text) => {
+          // Convert PII markers to HTML-safe format
+          return text.replace(/\[(B|I)-([^\]]+)\]/g, '<span class="pii-marker" data-pii-type="$2">[$1-$2]</span>');
+        };
 
-    // Clean up PII labels for better HTML compatibility
-    const cleanProcessedText = (text) => {
-      // Convert PII markers to HTML-safe format
-      return text.replace(/\[(B|I)-([^\]]+)\]/g, '<span class="pii-marker" data-pii-type="$2">[$1-$2]</span>');
-    };
+        // Process the text with proper HTML handling
+        const htmlSafeText = decodeHTMLEntities(processedText.processedText);
+        const formattedText = cleanProcessedText(htmlSafeText);
+        const intialText = text;
+        // Extract PII information for reporting
+        const piiLabels = tokenIndexObj.filter(label => label.startsWith('B-') || label.startsWith('I-'));
+        const piiCount = (processedText.processedText.match(/\[B-.*?\]/g) || []).length;
+        const piiTypesArray = (processedText.processedText.match(/\[B-.*?\]/g) || []).map(label => 
+          label.replace(/\[B-|\]/g, '')
+        );
+        const piiTypes = new Set(piiTypesArray);
 
-    // Process the text with proper HTML handling
-    const htmlSafeText = decodeHTMLEntities(processedText);
-    const formattedText = cleanProcessedText(htmlSafeText);
-    const intialText = text;
-    // Extract PII information for reporting
-    const piiLabels = tokenIndexObj.filter(label => label.startsWith('B-') || label.startsWith('I-'));
-    const piiCount = (processedText.match(/\[B-.*?\]/g) || []).length;
-    const piiTypesArray = (processedText.match(/\[B-.*?\]/g) || []).map(label => 
-      label.replace(/\[B-|\]/g, '')
-    );
-    const piiTypes = new Set(piiTypesArray);
-
-    // Create a new row in the results table
-    const newRow = table.insertRow();
-    const fileNameCell = newRow.insertCell(0);
-    fileNameCell.textContent = fileName;
-    
-    const piiCell = newRow.insertCell(1);
-    
-    if (piiTypes.size >= 1) {
-      // Format PII types as a comma-separated list for better readability
-      const piiTypesList = Array.from(piiTypes).join(', ');
-      piiCell.innerHTML = `Contains <strong>${piiCount}</strong> PII Elements of: <strong>${piiTypes.size}</strong> types<br><small>(${piiTypesList})</small>`;
-      piiCell.className = 'pii';
-      
-      const downloadCell = newRow.insertCell(2);
-      downloadCell.className = 'action-buttons';
-
-      // Create masked document button with improved styling
-      const downloadButton = document.createElement('button');
-      downloadButton.className = 'action-button primary';
-      downloadButton.style.cssText = 'background-color: #1976d2; color: white; padding: 6px 16px; font-size: 0.875rem; min-width: 64px; box-sizing: border-box; transition: background-color 0.3s ease; border: none; border-radius: 4px; cursor: pointer; margin-right: 8px;';
-      downloadButton.textContent = 'Masked Document';
-      downloadCell.appendChild(downloadButton);
-      
-      downloadButton.onclick = async () => {
-        try {
-          const fileTile = fileName.replace('.docx','').replace(/[^a-zA-Z0-9-_]/g, '_');
-          
-          // Apply proper HTML sanitization before export
-          const sanitizedContent = formattedText
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-            
-          await exportHTML(sanitizedContent, fileTile);
-        } catch (error) {
-          console.error('Error exporting masked document:', error);
-          alert('Failed to export masked document. See console for details.');
-        }
-      };
-      
-      // Create CUI markup button with consistent styling
-      const cuiMarkupButton = document.createElement('button');
-      cuiMarkupButton.className = 'action-button secondary';
-      cuiMarkupButton.style.cssText = 'background-color: #1976d2; color: white; padding: 6px 16px; font-size: 0.875rem; min-width: 64px; box-sizing: border-box; transition: background-color 0.3s ease; border: none; border-radius: 4px; cursor: pointer;';
-      cuiMarkupButton.textContent = 'CUI Markup';
-      downloadCell.appendChild(cuiMarkupButton);
-      
-      cuiMarkupButton.onclick = async () => {
-        try {
-          // Store CUI DI string in session storage instead of global variable for persistence
-         // let cuiDI_String = sessionStorage.getItem('cuiDI_String') || "";
-          
-      
-            // Create a modal dialog instead of using prompt
-            const dialog = document.createElement('div');
-            dialog.innerHTML = `
-              <div style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; display:flex; align-items:center; justify-content:center;">
-                <div style="background:white; padding:20px; border-radius:8px; width:80%; max-width:500px;">
-                  <h3>CUI Labeling Instructions</h3>
-                  <p>Please enter the CUI DI string as HTML. Use &lt;br&gt; for line breaks.</p>
-                  <p><strong>Format:</strong> CUI OR CONTROLLED//CATEGORIES//SUBCATEGORIES//DISSEM</p>
-                  <p>Example: <label style='background:#f0f0f0; padding:2px 4px; border-radius:3px;'>CUI//GENERAL-PII//DISSEM</label></p>
-                  <p><strong>CUI Designation Indicator Block Required Elements:</strong></p>
-                  <ul>
-                    <li>Controlled by: [Name of Organization] (Only if not on letterhead)</li>
-                    <li>Controlled by: [Name of Office]</li>
-                    <li>CUI Category: (List of CUI category or categories)</li>
-                    <li>Limited Dissemination Control or Distribution Statement</li>
-                    <li>POC: [Phone or email address]</li>
-                  </ul>
-                  <textarea id="cuiInput" style="width:100%; height:100px; margin-bottom:10px;"></textarea>
-                  <div style="text-align:right;">
-                    <button id="cuiCancel" style="margin-right:10px; padding:8px 16px;">Cancel</button>
-                    <button id="cuiSubmit" style="padding:8px 16px; background:#1976d2; color:white; border:none; border-radius:4px;">Submit</button>
-                  </div>
-                </div>
-              </div>
-            `;
-            document.body.appendChild(dialog);
-            
-            document.getElementById('cuiCancel').onclick = () => {
-              document.body.removeChild(dialog);
-            };
-            
-            document.getElementById('cuiSubmit').onclick = async () => {
-              cuiDI_String = document.getElementById('cuiInput').value;
-              sessionStorage.setItem('cuiDI_String', cuiDI_String);
-              document.body.removeChild(dialog);
-              
-              // Process with the newly entered CUI DI string
-              const fileTile = fileName.replace('.docx', '').replace(/[^a-zA-Z0-9-_]/g, '_');
-              await exportHTML(intialText, fileTile, cuiDI_String);
-            };
-          
-        } catch (error) {
-          console.error('Error creating CUI markup document:', error);
-          alert('Failed to create CUI markup document. See console for details.');
-        }
-      };
-    
-      //Button to copy the text to the clipboard for easy pasting into an Chat bot
-      const copyButton = document.createElement('button');
-      copyButton.className = 'action-button secondary';
-      copyButton.style.cssText = 'background-color: #1976d2; color: white; padding: 6px 16px; font-size: 0.875rem; min-width: 64px; box-sizing: border-box; transition: background-color 0.3s ease; border: none; border-radius: 4px; cursor: pointer;';
-      copyButton.textContent = 'Copy Markdown';
-      //add a space between the buttons
-      downloadCell.appendChild(document.createTextNode(' '));
-      downloadCell.appendChild(copyButton);
-      copyButton.onclick = async () => {
-        try {
-          const textArea = document.createElement('textarea');
-          var markdown = convertHtmlToMarkdown(processedText)
-          textArea.value = markdown;
-         
-          document.body.appendChild(textArea);
-          textArea.select();
-          document.execCommand('copy');
-          document.body.removeChild(textArea);
-         
-          const copiedNotification = document.createElement('div');
-          copiedNotification.className = 'notification';
-          copiedNotification.textContent = 'Text copied to clipboard!';
-          Object.assign(copiedNotification.style, {
-            position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            backgroundColor: '#4caf50',
-            color: '#fff',
-            padding: '10px 20px',
-            borderRadius: '8px',
-            boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
-            zIndex: '1000',
-            fontFamily: 'Arial, sans-serif'
-          });
-          const existingNotifications = document.getElementsByClassName('notification');
-          for (let i = 0; i < existingNotifications.length; i++) {
-            document.body.removeChild(existingNotifications[i]);
+        // Find the existing row for the file
+        const table = document.getElementById('resultsTable');
+        const rows = table.getElementsByTagName('tr');
+        let targetRow = null;
+        for (let row of rows) {
+          if (row.cells[0] && row.cells[0].textContent === fileName) {
+            targetRow = row;
+            break;
           }
-          document.body.appendChild(copiedNotification);
-          setTimeout(() => {
-            document.body.removeChild(copiedNotification);
-          }, 5000);
-
-        } catch (error) {
-          console.error('Error copying text to clipboard:', error);
-          alert('Failed to copy text to clipboard. See console for details.');
         }
-      };
 
-    } else {
-      piiCell.textContent = 'No PII Found';
-      // Add third empty cell for consistency
-      newRow.insertCell(2);
+        if (targetRow) {
+          const piiCell = targetRow.cells[1];
+          const sanitizedCell = targetRow.cells[2];
+
+          // if (piiTypes.size >= 1) {
+          //   // Format PII types as a comma-separated list for better readability
+          //   const piiTypesList = Array.from(piiTypes).join(', ');
+          //   piiCell.innerHTML = `Contains <strong>${piiCount}</strong> PII Elements of: <strong>${piiTypes.size}</strong> types<br><small>(${piiTypesList})</small>`;
+          //   piiCell.className = 'pii';
+          //   sanitizedCell.innerHTML = processedText ? 'Yes' : 'No';
+          //   sanitizedCell.className = processedText ? 'success' : 'default';
+          // } else {
+          //   piiCell.textContent = 'No PII Found';
+          //   sanitizedCell.textContent = 'No';
+          //   sanitizedCell.className = 'default';
+          // }
+
+          // Post a message to the sender of the message with the results
+          window.postMessage({ type: 'PII_INFERENCE_RESULT', fileName: fileName, piiCount: piiCount, content: formattedText }, '*');
+        }
+
+        // Return the sanitized text
+
+        var dumb = 
+        {pt: processedText.processedText,
+          sr: processedText.syntheticReplacementText,
+          pw: processedText.processedWords,
+          html: processedText.finalText,
+          subHTML: processedText.finalSubstitutionText,
+        };
+        return dumb;
+      }).catch(error => {
+        console.log('Error during token classification:', error);
+        // Show error in UI
+        const table = document.getElementById('resultsTable');
+        const rows = table.getElementsByTagName('tr');
+        let targetRow = null;
+        for (let row of rows) {
+          if (row.cells[0] && row.cells[0].textContent === fileName) {
+            targetRow = row;
+            break;
+          }
+        }
+        if (targetRow) {
+          const errorCell = targetRow.cells[1];
+          errorCell.textContent = 'Error processing file';
+          errorCell.className = 'error';
+          targetRow.cells[2].textContent = '';
+        }
+      });  
     }
-  }).catch(error => {
-    console.error('Error during token classification:', error);
-    // Show error in UI
-    const table = document.getElementById('resultsTable');
-    const newRow = table.insertRow();
-    const fileNameCell = newRow.insertCell(0);
-    fileNameCell.textContent = fileName;
-    const errorCell = newRow.insertCell(1);
-    errorCell.textContent = 'Error processing file';
-    errorCell.className = 'error';
-    newRow.insertCell(2);
-  });  
-}
 
-  }catch(e){
+  } catch(e) {
     console.log(e);
   }
 }  
 
 var cuiDI_String = "";
 
-function exportHTML(inputText, fileTitle, cuiDesignatorText = "",orgName="",dist) {
+
+
+
+function exportHTML(fileInput, cuiDesignatorText = "",orgName="",dist) {
   // CUI Designator Block (Now in Footer)
   const cuiFooterContent = new Paragraph({
       children: [
@@ -443,6 +342,7 @@ function exportHTML(inputText, fileTitle, cuiDesignatorText = "",orgName="",dist
       })
   ];
 
+
   // Header and Footer
   const header = new Header({
       children: [
@@ -459,7 +359,7 @@ function exportHTML(inputText, fileTitle, cuiDesignatorText = "",orgName="",dist
 
   // Parse HTML content into Paragraph objects
   const parser = new DOMParser();
-  const htmlDoc = parser.parseFromString(inputText, 'text/html');
+  const htmlDoc = parser.parseFromString(fileInput.inputText, 'text/html');
   const elements = htmlDoc.body.childNodes;
   const mainContent = [];
 
@@ -522,15 +422,9 @@ function exportHTML(inputText, fileTitle, cuiDesignatorText = "",orgName="",dist
 
   // Generate and Download Word File
   Packer.toBlob(doc).then(blob => {
-      saveAs(blob, `${fileTitle}.docx`);
+      saveAs(blob, `${fileInput.fileTitle}.docx`);
   });
 }
-
-
-
-
-
-
 
 async function loadMammothScript(){
  
@@ -546,7 +440,7 @@ async function loadMammothScript(){
 window.onload = loadMammothScript;
 
 
-async function lm_inference_TokenClasification(text) {
+async function lm_inference_TokenClasification(text,fileName="dummy") {
 
 
   try {
@@ -642,6 +536,8 @@ async function lm_inference_TokenClasification(text) {
     // Process each chunk
     let processedText = '';
     let currentWordIndex = 0;
+    // synthetic replacement text
+    let syntheticReplacementText = '';
     
     for (let chunkIndex = 0; chunkIndex < wordChunks.length; chunkIndex++) {
       //update the notification to show the progress of the infrence
@@ -721,6 +617,8 @@ async function lm_inference_TokenClasification(text) {
       
       // Build the processed text for this chunk
       let chunkProcessedText = '';
+      //Build synthetic rplacement chunk too
+      let chunkSyntheticReplacement = '';
       for (let i = 0; i < chunkWords.length; i++) {
         const wordInfo = wordToLabelMap.get(currentWordIndex + i);
         if (!wordInfo) continue;
@@ -728,11 +626,26 @@ async function lm_inference_TokenClasification(text) {
         // Apply PII masking if needed
         if (wordInfo.label !== 'O') {
           chunkProcessedText += `[${wordInfo.label}] `;
+          chunkSyntheticReplacement += `[${wordInfo.label}] `;
         } else {
           chunkProcessedText += `${wordInfo.word} `;
+          //check to see if the word is present for the file name with the same label in sanatization_sub_keys if so use that replacment as the synthetic replacement
+          var found = sanatization_sub_keys.find(obj => obj.fName === fileName && obj.original === wordInfo.word && obj.type === wordInfo.label);
+          if (found) {
+            chunkSyntheticReplacement += `${found.replacement} `;
+          }else {
+
+
+            var replacementFunction = getFakerFunctionForTag(wordInfo.label);
+            var anonymizedText = replacementFunction(wordInfo.word);
+            //update the sanatization_sub_keys with object that show the original word and the replacement
+            sanatization_sub_keys.push({ fName:fileName, original: wordInfo.word, replacement: anonymizedText, type: wordInfo.label });
+            //add the anonymized text to the synthetic replacement
+            chunkSyntheticReplacement += `${anonymizedText} `;
+          }
         }
       }
-      
+      syntheticReplacementText += chunkSyntheticReplacement;
       processedText += chunkProcessedText;
       currentWordIndex += chunkWords.length;
     }
@@ -740,13 +653,15 @@ async function lm_inference_TokenClasification(text) {
     // Trim the processed text and split into words
     processedText = processedText.trim();
     const processedWords = processedText.split(' ');
-    
+    const processedSubstitutionWords = syntheticReplacementText.split(' ');
+    syntheticReplacementText = syntheticReplacementText.trim();
 
     //order the orginalMerge array by startPos
     mergedElements.sort((a, b) => a.startPos - b.startPos);
 
     //use the orginalMerge array to reinsert the special elements at their original positions
     let finalText = '';
+    let finalSubstitutionText = '';
     let currentPos = 0;
     let wordIdx = 0;
     for (let i = 0; i < mergedElements.length; i++) {
@@ -757,6 +672,7 @@ async function lm_inference_TokenClasification(text) {
       if (element.startPos > currentPos) {
         // Add appropriate spacing based on the gap
         finalText += ' '.repeat(Math.min(element.startPos - currentPos, 1));
+        finalSubstitutionText += ' '.repeat(Math.min(element.startPos - currentPos, 1));
       }
       
       // Process element based on type
@@ -764,12 +680,15 @@ async function lm_inference_TokenClasification(text) {
         // Handle special case for &amp;
         if (element.content === 'amp;') {
           finalText += '&';
+          finalSubstitutionText += '&';
         } else {
           finalText += element.content;
+          finalSubstitutionText += element.content;
         }
       } else {
         // It's a word - replace with processed version
         finalText += processedWords[wordIdx];
+        finalSubstitutionText += processedSubstitutionWords[wordIdx];
         wordIdx++;
       }
       
@@ -802,7 +721,7 @@ async function lm_inference_TokenClasification(text) {
       document.body.removeChild(completionNotification);
     }, 5000);
 
-    return [finalText , processedText];
+    return {finalText , processedText, syntheticReplacementText, processedWords,finalSubstitutionText};
   } catch (error) {
     console.error('Error in token classification:', error);
     throw new Error(`Token classification failed: ${error.message}`);
@@ -878,11 +797,20 @@ const tokenizer = Mytokenizer
 
 const TurndownService = require('turndown').default; 
 
-function convertHtmlToMarkdown(html) {
+async function convertHtmlToMarkdown(file,useSubstitutions = false) {
     const turndownService = new TurndownService();
-    return turndownService.turndown(html);
+    if(useSubstitutions){
+      const fileSubstitutions = await file.substitutionHTML;
+      return turndownService.turndown(fileSubstitutions);
+    }else{
+    const fileContentFool = await file.html; // Await the promise if file is a promise
+  
+    return turndownService.turndown(fileContentFool);
+    }
 }
+
 export let inference = lm_inference 
 export let columnNames = EMOJI_DEFAULT_DISPLAY
 export let modelDownloadInProgress = isDownloading
 export let pii_inference = infrenceStart
+export { removeNoFilesUploadedRow ,exportHTML, convertHtmlToMarkdown, loadMammothScript, lm_inference_TokenClasification, initializeSession };
