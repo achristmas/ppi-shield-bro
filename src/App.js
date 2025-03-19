@@ -1,6 +1,7 @@
 import './App.css';
 import React, { Component } from 'react';
 import { modelDownloadInProgress, pii_inference, removeNoFilesUploadedRow, convertHtmlToMarkdown, exportHTML } from './inference.js';
+import { getPiiCategory, getHighRiskCount, getLowRiskCount,getModerateRiskCount,getLabelCount } from './piiananlytics.js';
 import { 
   Box, 
   LinearProgress, 
@@ -24,9 +25,11 @@ import {
   CircularProgress,
   ButtonGroup,
   Menu,
-  MenuItem
+  MenuItem,
+  Collapse,
+  IconButton
 } from '@mui/material';
-import { Download as DownloadIcon, ContentCopy as ContentCopyIcon, ArrowDropDown as ArrowDropDownIcon } from '@mui/icons-material';
+import { Download as DownloadIcon, ContentCopy as ContentCopyIcon, ArrowDropDown as ArrowDropDownIcon, ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DescriptionIcon from '@mui/icons-material/Description';
 import SecurityIcon from '@mui/icons-material/Security';
@@ -34,6 +37,10 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import InfoIcon from '@mui/icons-material/Info';
 import { PDFDocument } from 'pdf-lib';
+import { Bar } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 class TextInputArea extends React.Component {
   constructor(props) {
@@ -49,7 +56,8 @@ class TextInputArea extends React.Component {
       showTextPopup: false, // Track if the text popup is visible
       userInputText: '', // Store the user input text
       sanitizedText: '', // Store the sanitized text
-      menuAnchor: null // Anchor element for the dropdown menu
+      menuAnchor: null, // Anchor element for the dropdown menu
+      expandedRow: null // Track the expanded row
     };
   }
 
@@ -176,6 +184,21 @@ class TextInputArea extends React.Component {
       if (file && file.name.endsWith(".docx")) {
         try {
           const result = await this.processDocxFile(file);
+
+          var myStuff = await result.analytics;
+          var otherStuffHigh = await myStuff.highRiskCount;
+          var otherStuffLow = await myStuff.lowRiskCount;
+          var otherStuffModerate = await myStuff.moderateRiskCount;
+          var otherStuffLabel = await myStuff.labelCount;
+          //construct an analytics object to store the results
+          var updatedmyStuff = {
+            highRiskCount: otherStuffHigh,
+            lowRiskCount: otherStuffLow,
+            moderateRiskCount: otherStuffModerate,
+            labelCount: otherStuffLabel
+          }
+          
+          
           newFileResults.push({ 
             filename: file.name, 
             hasPII: result.containsPII ? true : false,
@@ -183,7 +206,8 @@ class TextInputArea extends React.Component {
             substituionText: result.substituionText,
             ProcessWordsArray: result.ProcessWordsArray,
             MaskedText: result.resultData ,// Store the raw result data for further processing if needed
-            html: result.htmlData // Store the HTML data for further processing if needed
+            html: result.htmlData, // Store the HTML data for further processing if needed
+            analytics: updatedmyStuff // Store the analytics results for further processing if needed
         
           });
         } catch (error) {
@@ -195,12 +219,15 @@ class TextInputArea extends React.Component {
             substituionText: "Error",
             ProcessWordsArray: "Error",
             MaskedText: "Error" ,
-            html: "Error" // Store the HTML data for further processing if needed
+            html: "Error", // Store the HTML data for further processing if needed
+            analytics: "Error" // Store the analytics results for further processing if needed
+
           });
         }
       } else if (file && file.name.endsWith(".pdf")) {
         try {
           const result = await this.processPdfFile(file);
+          var myStuffpd = await result.analytics;
           newFileResults.push({ 
             filename: file.name, 
             hasPII: result.containsPII ? true : false,
@@ -208,7 +235,8 @@ class TextInputArea extends React.Component {
             substituionText: result.substituionText,
             ProcessWordsArray: result.ProcessWordsArray,
             MaskedText: result.resultData ,
-            html: result.htmlData // Store the HTML data for further processing if needed
+            html: result.htmlData, // Store the HTML data for further processing if needed
+            analytics: myStuffpd // Store the analytics data for further processing if needed
           });
         } catch (error) {
           console.error(`Error processing ${file.name}:`, error);
@@ -219,12 +247,14 @@ class TextInputArea extends React.Component {
             substituionText: "Error",
             ProcessWordsArray: "Error",
             MaskedText: "Error" ,
-            html: "Error" // Store the HTML data for further processing if needed
+            html: "Error", // Store the HTML data for further processing if needed
+            analytics: "Error" // Store the analytics results for further processing if needed
           });
         }
       } else if (file && file.name.endsWith(".txt")) {
         try {
           const result = await this.processTxtFile(file);
+          var myStufftx = await result.analytics;
           newFileResults.push({ 
             filename: file.name, 
             hasPII: result.containsPII ? true : false,
@@ -232,7 +262,8 @@ class TextInputArea extends React.Component {
             substituionText: result.substituionText,
             ProcessWordsArray: result.ProcessWordsArray,
             MaskedText: result.resultData ,
-            html: result.htmlData // Store the HTML data for further processing if needed
+            html: result.htmlData, // Store the HTML data for further processing if needed
+            analytics: myStufftx // Store the analytics results for further processing if needed
           });
         } catch (error) {
           console.error(`Error processing ${file.name}:`, error);
@@ -366,7 +397,19 @@ class TextInputArea extends React.Component {
       const substitutionHTML = new Promise((resolve) => {
         resolve(resultData.subHTML);
       });
-  
+      //peforma analytics on the resultData
+      const analytics = new Promise((resolve) => {
+        resolve({
+          highRiskCount: getHighRiskCount(resultData.pt),
+          lowRiskCount: getLowRiskCount(resultData.pt),
+          moderateRiskCount: getModerateRiskCount(resultData.pt),
+          labelCount: getLabelCount(resultData.pt) // Assuming getPiiCategory returns a count object
+        });
+      }
+      );
+
+       // Log the analytics object for debugging
+      analytics.then(data => console.log('Analytics:', data));
       return {
         containsPII,
         resultData, // Return the raw result data for further processing if needed
@@ -374,7 +417,8 @@ class TextInputArea extends React.Component {
         substituionText,
         ProcessWordsArray,
         htmlData,
-        substitutionHTML
+        substitutionHTML,
+        analytics // Return the analytics results for further processing if needed
       };
     } catch (error) {
       console.log('PII analysis error:', error);
@@ -469,8 +513,16 @@ class TextInputArea extends React.Component {
     this.setState({ menuAnchor: null });
   };
 
+  // Function to handle row expansion
+  handleRowExpand = (index) => {
+    this.setState((prevState) => ({
+      // Toggle the expanded row state
+      expandedRow: prevState.expandedRow === index ? null : index
+    }));
+  };
+
   render() {
-    const { downloading, fileResults, latency, analyzing, receivedInput, showTextPopup, userInputText, sanitizedText, menuAnchor } = this.state;
+    const { downloading, fileResults, latency, analyzing, receivedInput, showTextPopup, userInputText, sanitizedText, menuAnchor, expandedRow } = this.state;
 
     return (
       <Box sx={{ 
@@ -644,196 +696,295 @@ class TextInputArea extends React.Component {
                         <TableCell align="center" sx={{ fontWeight: 'bold', py: 2 }}>
                           Sanitization Actions
                         </TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 'bold', py: 2 }}>
+                          Risk Detail
+                        </TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {fileResults.length > 0 ? (
                         fileResults.map((file, index) => (
-                          <TableRow 
-                            key={index} 
-                            hover
-                            sx={{ 
-                              '&:last-child td, &:last-child th': { border: 0 },
-                              backgroundColor: index % 2 === 0 ? 'white' : 'rgba(0, 0, 0, 0.02)'
-                            }}
-                          >
-                            <TableCell sx={{ py: 2 }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                <DescriptionIcon color="action" fontSize="small" />
-                                <Typography variant="body2">{file.filename}</Typography>
-                              </Box>
-                            </TableCell>
-                            <TableCell align="center" sx={{ py: 2 }}>
-                              {typeof file.hasPII === 'boolean' ? (
+                          <React.Fragment key={index}>
+                            <TableRow 
+                              hover
+                              sx={{ 
+                                '&:last-child td, &:last-child th': { border: 0 },
+                                backgroundColor: index % 2 === 0 ? 'white' : 'rgba(0, 0, 0, 0.02)'
+                              }}
+                            >
+                              <TableCell sx={{ py: 2 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                  <DescriptionIcon color="action" fontSize="small" />
+                                  <Typography variant="body2">{file.filename}</Typography>
+                                </Box>
+                              </TableCell>
+                              <TableCell align="center" sx={{ py: 2 }}>
+                                {typeof file.hasPII === 'boolean' ? (
+                                  <Chip
+                                    icon={file.hasPII ? <ErrorIcon /> : <CheckCircleIcon />}
+                                    label={file.hasPII ? 'Yes' : 'No'}
+                                    color={file.hasPII ? 'error' : 'success'}
+                                    size="small"
+                                    variant="outlined"
+                                  />
+                                ) : (
+                                  <Chip
+                                    icon={<InfoIcon />}
+                                    label={file.hasPII}
+                                    color="warning"
+                                    size="small"
+                                    variant="outlined"
+                                  />
+                                )}
+                              </TableCell>
+                              <TableCell align="center" sx={{ py: 2 }}>
                                 <Chip
-                                  icon={file.hasPII ? <ErrorIcon /> : <CheckCircleIcon />}
-                                  label={file.hasPII ? 'Yes' : 'No'}
-                                  color={file.hasPII ? 'error' : 'success'}
+                                  label={file.sanitized ? 'Yes' : 'No'}
+                                  color={file.sanitized ? 'success' : 'default'}
                                   size="small"
                                   variant="outlined"
                                 />
-                              ) : (
-                                <Chip
-                                  icon={<InfoIcon />}
-                                  label={file.hasPII}
-                                  color="warning"
-                                  size="small"
-                                  variant="outlined"
-                                />
-                              )}
-                            </TableCell>
-                            <TableCell align="center" sx={{ py: 2 }}>
-                              <Chip
-                                label={file.sanitized ? 'Yes' : 'No'}
-                                color={file.sanitized ? 'success' : 'default'}
-                                size="small"
-                                variant="outlined"
-                              />
-                            </TableCell>
-                            <TableCell align="center" sx={{ py: 2 }}>
-                            <ButtonGroup variant="contained" color="primary">
-                              <Button
-                                variant="contained"
-                                color="primary"
-                                size="small"
-                                onClick={async () => {
-                                  var content = await convertHtmlToMarkdown(file);
-                                  navigator.clipboard.writeText(content);
-                                  if (navigator.clipboard) {
-                                    navigator.clipboard.writeText(content).then(() => {
-                                      console.log('Text copied to clipboard');
-                                    }).catch(err => {
-                                      console.error('Could not copy text: ', err);
-                                    });
-                                  } else {
-                                    alert('Clipboard API not supported');
-                                  }
-                                   this.handleMenuClose();
-                                }}
-                              >
-                                Copy Markdown
-                              </Button>
-                              <Button 
-                                color="secondary"
-                                size="primary"
-                                onClick={this.setMenuAnchor}
-                                sx={{ padding: '4px 8px' }}
-                              >
-                                <ArrowDropDownIcon />
-                              </Button>
-
-                              {/* Dropdown Menu */}
-                              <Menu 
-                                anchorEl={menuAnchor} 
-                                open={Boolean(menuAnchor)} 
-                                onClose={this.handleMenuClose}
-                              >
-                                <MenuItem onClick={async () => { 
-                                  var content = await convertHtmlToMarkdown(file);
-                                  navigator.clipboard.writeText(content);
-                                  if (navigator.clipboard) {
-                                    navigator.clipboard.writeText(content).then(() => {
-                                      console.log('Text copied to clipboard');
-                                    }).catch(err => {
-                                      console.error('Could not copy text: ', err);
-                                    });
-                                  } else {
-                                    alert('Clipboard API not supported');
-                                  }
-                                   this.handleMenuClose(); }}>
-                                  <ContentCopyIcon sx={{ mr: 1 }} /> Copy Markdown
-                                </MenuItem>
-                                <MenuItem onClick={ async() => { 
-                                  var content = await exportHTML(file);
-                                  // Create a Blob with the HTML content
-                                  const blob = new Blob([content], { type: 'text/html' });
-                                  
-                                  // Create a URL for the blob
-                                  const url = URL.createObjectURL(blob);
-                                  
-                                  // Create a temporary anchor element
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = `${file.name || 'document'}.html`;
-                                  
-                                  // Append to the document, click it, and remove it
-                                  document.body.appendChild(a);
-                                  a.click();
-                                  document.body.removeChild(a);
-                                  
-                                  // Clean up the URL object
-                                  URL.revokeObjectURL(url);
-                                  
-                                  this.handleMenuClose(); 
-                                 }}
+                              </TableCell>
+                              <TableCell align="center" sx={{ py: 2 }}>
+                                <ButtonGroup variant="contained" color="primary">
+                                  <Button
+                                    variant="contained"
+                                    color="primary"
+                                    size="small"
+                                    onClick={async () => {
+                                      var content = await convertHtmlToMarkdown(file);
+                                      navigator.clipboard.writeText(content);
+                                      if (navigator.clipboard) {
+                                        navigator.clipboard.writeText(content).then(() => {
+                                          console.log('Text copied to clipboard');
+                                        }).catch(err => {
+                                          console.error('Could not copy text: ', err);
+                                        });
+                                      } else {
+                                        alert('Clipboard API not supported');
+                                      }
+                                      this.handleMenuClose();
+                                    }}
                                   >
-                                  <DownloadIcon sx={{ mr: 1 }} /> Download as HTML
-                                </MenuItem>
-                                <MenuItem onClick={async () => { 
-                                  var content = await convertHtmlToMarkdown(file);
-                                  // Create a Blob with the Markdown content
-                                  const blob = new Blob([content], { type: 'text/markdown' });
-                                  // Create a URL for the blob
-                                  const url = URL.createObjectURL(blob);
-                                  // Create a temporary anchor element
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = `${file.name || 'document'}.md`;
-                                  // Append to the document, click it, and remove it
-                                  document.body.appendChild(a);
-                                  a.click();
-                                  document.body.removeChild(a);
-                                  // Clean up the URL object
-                                  URL.revokeObjectURL(url);
-                                  // Close the menu after download
-                                   this.handleMenuClose(); 
-                                  }}>
-                                  <DownloadIcon sx={{ mr: 1 }} /> Download as Markdown
-                                </MenuItem>
-                                <MenuItem onClick={async() => { /* Your substitution markdown logic */
-                                    var content = await convertHtmlToMarkdown(file,true);
-                                   navigator.clipboard.writeText(content);
-                                   if (navigator.clipboard) {
-                                     navigator.clipboard.writeText(content).then(() => {
-                                       console.log('Text copied to clipboard');
-                                     }).catch(err => {
-                                       console.error('Could not copy text: ', err);
-                                     });
-                                   } else {
-                                     alert('Clipboard API not supported');
-                                   } 
-                                  this.handleMenuClose(); }}>
-                                  <ContentCopyIcon sx={{ mr: 1 }} /> Copy as Substitution Markdown
-                                </MenuItem>
-                                <MenuItem onClick={async() => {
-                                  //option to donwload the substitution markdown
-                                  var content = await convertHtmlToMarkdown(file,true);
-                                  navigator.clipboard.writeText(content);
-                                  //download the content to a file
-                                  const blob = new Blob([content], { type: 'text/markdown' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = `${file.name || 'document'}.md`;
-                                  document.body.appendChild(a);
-                                  a.click();
-                                  document.body.removeChild(a);
-                                  URL.revokeObjectURL(url);
-                                  this.handleMenuClose();
-                                }}>
-                                  <DownloadIcon sx={{ mr: 1 }} /> Download Substitution Markdown
+                                    Copy Markdown
+                                  </Button>
+                                  <Button 
+                                    color="primary"
+                                    size="primary"
+                                    onClick={this.setMenuAnchor}
+                                    sx={{ padding: '4px 8px' }}
+                                  >
+                                    <ArrowDropDownIcon />
+                                  </Button>
 
+                                  {/* Dropdown Menu */}
+                                  <Menu 
+                                    anchorEl={menuAnchor} 
+                                    open={Boolean(menuAnchor)} 
+                                    onClose={this.handleMenuClose}
+                                  >
+                                    <MenuItem onClick={async () => { 
+                                      var content = await convertHtmlToMarkdown(file);
+                                     
+                                      if (navigator.clipboard) {
+                                        navigator.clipboard.writeText(content).then(() => {
+                                          console.log('Text copied to clipboard');
+                                        }).catch(err => {
+                                          console.error('Could not copy text: ', err);
+                                        });
+                                      } else {
+                                        alert('Clipboard API not supported');
+                                      }
+                                      this.handleMenuClose(); }}>
+                                      <ContentCopyIcon sx={{ mr: 1 }} /> Copy Markdown
+                                    </MenuItem>
+                                    <MenuItem onClick={ async() => { 
+                                      var content = await exportHTML(file);
+                                      // Create a Blob with the HTML content
+                                      const blob = new Blob([content], { type: 'text/html' });
+                                      
+                                      // Create a URL for the blob
+                                      const url = URL.createObjectURL(blob);
+                                      
+                                      // Create a temporary anchor element
+                                      const a = document.createElement('a');
+                                      a.href = url;
+                                      a.download = `${file.name || 'document'}.html`;
+                                      
+                                      // Append to the document, click it, and remove it
+                                      document.body.appendChild(a);
+                                      a.click();
+                                      document.body.removeChild(a);
+                                      
+                                      // Clean up the URL object
+                                      URL.revokeObjectURL(url);
+                                      
+                                      this.handleMenuClose(); 
+                                    }}
+                                      >
+                                      <DownloadIcon sx={{ mr: 1 }} /> Download as HTML
+                                    </MenuItem>
+                                    <MenuItem onClick={async () => { 
+                                      var content = await convertHtmlToMarkdown(file);
+                                      // Create a Blob with the Markdown content
+                                      const blob = new Blob([content], { type: 'text/markdown' });
+                                      // Create a URL for the blob
+                                      const url = URL.createObjectURL(blob);
+                                      // Create a temporary anchor element
+                                      const a = document.createElement('a');
+                                      a.href = url;
+                                      a.download = `${file.name || 'document'}.md`;
+                                      // Append to the document, click it, and remove it
+                                      document.body.appendChild(a);
+                                      a.click();
+                                      document.body.removeChild(a);
+                                      // Clean up the URL object
+                                      URL.revokeObjectURL(url);
+                                      // Close the menu after download
+                                      this.handleMenuClose(); 
+                                    }}>
+                                      <DownloadIcon sx={{ mr: 1 }} /> Download as Markdown
+                                    </MenuItem>
+                                    <MenuItem onClick={async() => { /* Your substitution markdown logic */
+                                        var content = await convertHtmlToMarkdown(file,true);
+                                      navigator.clipboard.writeText(content);
+                                      if (navigator.clipboard) {
+                                        navigator.clipboard.writeText(content).then(() => {
+                                          console.log('Text copied to clipboard');
+                                        }).catch(err => {
+                                          console.error('Could not copy text: ', err);
+                                        });
+                                      } else {
+                                        alert('Clipboard API not supported');
+                                      } 
+                                      this.handleMenuClose(); }}>
+                                      <ContentCopyIcon sx={{ mr: 1 }} /> Copy as Substitution Markdown
+                                    </MenuItem>
+                                    <MenuItem onClick={async() => {
+                                      //option to donwload the substitution markdown
+                                      var content = await convertHtmlToMarkdown(file,true);
+                                      navigator.clipboard.writeText(content);
+                                      //download the content to a file
+                                      const blob = new Blob([content], { type: 'text/markdown' });
+                                      const url = URL.createObjectURL(blob);
+                                      const a = document.createElement('a');
+                                      a.href = url;
+                                      a.download = `${file.name || 'document'}.md`;
+                                      document.body.appendChild(a);
+                                      a.click();
+                                      document.body.removeChild(a);
+                                      URL.revokeObjectURL(url);
+                                      this.handleMenuClose();
+                                    }}>
+                                      <DownloadIcon sx={{ mr: 1 }} /> Download Substitution Markdown
+                                    </MenuItem>
+                                  </Menu>
+                                </ButtonGroup>
+                              </TableCell>
+                              <TableCell align="center" sx={{ py: 2 }}>
+                                <IconButton
+                                  onClick={() => {
                                    
-                                </MenuItem>
-                              </Menu>
-                            </ButtonGroup>
-                             
-                            </TableCell>
-                          </TableRow>
+                                    this.handleRowExpand(index);
+                                  }}
+                                  aria-expanded={expandedRow === index}
+                                  aria-label="show more"
+                                >
+                                  <ExpandMoreIcon />
+                                </IconButton>
+                              </TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
+                                <Collapse in={expandedRow === index} timeout="auto" unmountOnExit>
+                                  <Box margin={2}>
+                                    <Typography variant="h6" gutterBottom component="div">
+                                      Analytics:
+                                    </Typography>
+                                    <Divider sx={{ mb: 2 }} />
+                                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                                      Risk level of the documetent based on NIST 800-122 of High, Moderate and Low.  
+                                      High risk indicates that the document contains sensitive PII that could lead to identity theft or other serious consequences if disclosed. Moderate risk indicates that the document contains PII that could lead to some level of harm if disclosed, while low risk indicates that the document contains PII that is less likely to cause harm if disclosed.
+                                    </Typography>
+                                    {file.analytics ? (
+                                      <Box>
+                                        <Bar
+                                          data={{
+                                            labels: ['High Risk', 'Moderate Risk', 'Low Risk'],
+                                            datasets: [
+                                              {
+                                                label: 'Risk Level Count',
+                                                data: [
+                                                  file.analytics.highRiskCount,
+                                                  file.analytics.moderateRiskCount,
+                                                  file.analytics.lowRiskCount
+                                                ],
+                                                backgroundColor: [
+                                                  'rgba(255, 99, 132, 0.2)',
+                                                  'rgba(255, 206, 86, 0.2)',
+                                                  'rgba(75, 192, 192, 0.2)'
+                                                ],
+                                                borderColor: [
+                                                  'rgba(255, 99, 132, 1)',
+                                                  'rgba(255, 206, 86, 1)',
+                                                  'rgba(75, 192, 192, 1)'
+                                                ],
+                                                borderWidth: 1
+                                              }
+                                            ]
+                                          }}
+                                          options={{
+                                            responsive: true,
+                                            plugins: {
+                                             
+                                              title: {
+                                                display: false,
+                                                text: 'Risk Counts'
+                                              }
+                                            }
+                                          }}
+                                        />
+                                        <Bar
+                                          data={{
+                                            labels: Object.keys(file.analytics.labelCount),
+                                            datasets: [
+                                              {
+                                                label: 'Label Count',
+                                                data: Object.values(file.analytics.labelCount),
+                                                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                                                borderColor: 'rgba(54, 162, 235, 1)',
+                                                borderWidth: 1
+                                              }
+                                            ]
+                                          }}
+                                          options={{
+                                            responsive: true,
+                                            plugins: {
+                                              legend: {
+                                                position: 'top'
+                                              },
+                                              title: {
+                                                display: true,
+                                                text: 'Label Count'
+                                              }
+                                            }
+                                          }}
+                                        />
+                                      </Box>
+                                    ) : (
+                                      <Typography variant="body2" color="text.secondary">
+                                        No analytics available
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                </Collapse>
+                              </TableCell>
+                            </TableRow>
+                          </React.Fragment>
                         ))
                       ) : !receivedInput ? ( // Only show "No files uploaded" if no input has been received
                         <TableRow>
-                          <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
+                          <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
                             <Box 
                               sx={{ 
                                 display: 'flex', 
@@ -856,7 +1007,7 @@ class TextInputArea extends React.Component {
                         </TableRow>
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={4} sx={{ height: '100px' }} /> 
+                          <TableCell colSpan={5} sx={{ height: '100px' }} /> 
                         </TableRow>
                       )}
                     </TableBody>
