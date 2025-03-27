@@ -174,6 +174,9 @@ const piiCategoryMapping = {
     }
     // function to provide a low risk count based on a a input string
     async function getLowRiskCount(inputString) {
+
+        //if any char \[ or \] is present in the input string, replace it with the appropriate label [ or ] removing the escape character
+        inputString = inputString.replace(/\\\[/g, '[').replace(/\\\]/g, ']');
         const labels = await inputString.split(' ');
         let lowRiskCount = 0;
         for (const label of labels) {

@@ -154,39 +154,59 @@ async function initializeSession() {
 function removeNoFilesUploadedRow() {
   const table = document.getElementById('resultsTable');
   const rows = table.getElementsByTagName('tr');
-  // if (rows.length === 2) {
-  //   const cells = rows[1].getElementsByTagName('td');
-  //   if (cells.length === 1 && cells[0].textContent.indexOf('No files uploaded yet') > -1) {
-  //     table.deleteRow(1);
-  //   }
-  // }
-}
-
-async function infrenceStart(text, fileName="file.docx") {
-  //create a notification that pii inference is about to start in a visually pleasing way
-  const notification = document.createElement('div');
-  notification.className = 'notification';
-  notification.textContent = 'PII Inference is starting...';
-  //remove any existing notifications
-  const existingNotifications = document.getElementsByClassName('notification');
-  for (let i = 0; i < existingNotifications.length; i++) {
-    if (existingNotifications[i].parentNode) {
-      existingNotifications[i].parentNode.removeChild(existingNotifications[i]);
+  if (rows.length === 2) {
+    const cells = rows[1].getElementsByTagName('td');
+    if (cells.length === 1 && cells[0].textContent.indexOf('No files uploaded yet') > -1) {
+      table.deleteRow(1);
     }
   }
-  document.body.appendChild(notification);
+}
+
+
+async function infrenceStart(text, fileName="file.docx") {
+  // Create a notification that PII inference is about to start in a visually pleasing way
+  const notification = document.createElement('div');
   
-  removeNoFilesUploadedRow();
-  
-  //clean the HTML tags from the text and special characters
-  
+  notification.className = 'notification';
+  notification.textContent = 'PII Inference is starting...';
+
+
+  Object.assign(notification.style, {
+    backgroundColor: '#333',
+    color: '#fff',
+    padding: '10px 20px',
+    borderRadius: '8px',
+    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+    zIndex: '1000',
+    fontFamily: 'Arial, sans-serif',
+    marginTop: '20px',
+    position: 'fixed',
+    top: '10px',
+    right: '10px'
+  });
+
+    
+      const existingNotifications = document.getElementsByClassName('notification');
+      for (let i = 0; i < existingNotifications.length; i++) {
+        //if the notification is already present remove it
+        try {
+          document.body.removeChild(existingNotifications[i]);
+        }
+        catch (e) {
+          console.log("Error removing existing notification: ", e);
+        }
+      ;
+      }
+      document.body.appendChild(notification);
+
   try {
     await initializeSession();
     downLoadingModel = false;
-    //warmup the VM
+
+    // Warm up the VM
     for (var i = 0; i < 1; i++) {
       console.log("Inference warmup " + i);
-      return lm_inference_TokenClasification(text,fileName).then((processedText) => {
+      return lm_inference_TokenClasification(text, fileName).then((processedText) => {
         // Properly decode HTML entities in the processed text
         const decodeHTMLEntities = (text) => {
           const textarea = document.createElement('textarea');
@@ -203,11 +223,11 @@ async function infrenceStart(text, fileName="file.docx") {
         // Process the text with proper HTML handling
         const htmlSafeText = decodeHTMLEntities(processedText.processedText);
         const formattedText = cleanProcessedText(htmlSafeText);
-        const intialText = text;
+
         // Extract PII information for reporting
         const piiLabels = tokenIndexObj.filter(label => label.startsWith('B-') || label.startsWith('I-'));
         const piiCount = (processedText.processedText.match(/\[B-.*?\]/g) || []).length;
-        const piiTypesArray = (processedText.processedText.match(/\[B-.*?\]/g) || []).map(label => 
+        const piiTypesArray = (processedText.processedText.match(/\[B-.*?\]/g) || []).map(label =>
           label.replace(/\[B-|\]/g, '')
         );
         const piiTypes = new Set(piiTypesArray);
@@ -223,37 +243,35 @@ async function infrenceStart(text, fileName="file.docx") {
           }
         }
 
-        if (targetRow) {
-          const piiCell = targetRow.cells[1];
-          const sanitizedCell = targetRow.cells[2];
+        // if (targetRow) {
+        //   const piiCell = targetRow.cells[1];
+        //   const sanitizedCell = targetRow.cells[2];
 
-          // if (piiTypes.size >= 1) {
-          //   // Format PII types as a comma-separated list for better readability
-          //   const piiTypesList = Array.from(piiTypes).join(', ');
-          //   piiCell.innerHTML = `Contains <strong>${piiCount}</strong> PII Elements of: <strong>${piiTypes.size}</strong> types<br><small>(${piiTypesList})</small>`;
-          //   piiCell.className = 'pii';
-          //   sanitizedCell.innerHTML = processedText ? 'Yes' : 'No';
-          //   sanitizedCell.className = processedText ? 'success' : 'default';
-          // } else {
-          //   piiCell.textContent = 'No PII Found';
-          //   sanitizedCell.textContent = 'No';
-          //   sanitizedCell.className = 'default';
-          // }
+        //   // Update the PII cell and sanitized cell
+        //   if (piiTypes.size >= 1) {
+        //     const piiTypesList = Array.from(piiTypes).join(', ');
+        //     piiCell.innerHTML = `Contains <strong>${piiCount}</strong> PII Elements of: <strong>${piiTypes.size}</strong> types<br><small>(${piiTypesList})</small>`;
+        //     piiCell.className = 'pii';
+        //     sanitizedCell.innerHTML = processedText ? 'Yes' : 'No';
+        //     sanitizedCell.className = processedText ? 'success' : 'default';
+        //   } else {
+        //     piiCell.textContent = 'No PII Found';
+        //     sanitizedCell.textContent = 'No';
+        //     sanitizedCell.className = 'default';
+        //   }
 
-          // Post a message to the sender of the message with the results
-          window.postMessage({ type: 'PII_INFERENCE_RESULT', fileName: fileName, piiCount: piiCount, content: formattedText }, '*');
-        }
+        //   // Post a message to the sender of the message with the results
+        //   window.postMessage({ type: 'PII_INFERENCE_RESULT', fileName: fileName, piiCount: piiCount, content: formattedText }, '*');
+        // }
 
         // Return the sanitized text
-
-        var dumb = 
-        {pt: processedText.processedText,
+        return {
+          pt: processedText.processedText,
           sr: processedText.syntheticReplacementText,
           pw: processedText.processedWords,
           html: processedText.finalText,
           subHTML: processedText.finalSubstitutionText,
         };
-        return dumb;
       }).catch(error => {
         console.log('Error during token classification:', error);
         // Show error in UI
@@ -272,10 +290,9 @@ async function infrenceStart(text, fileName="file.docx") {
           errorCell.className = 'error';
           targetRow.cells[2].textContent = '';
         }
-      });  
+      });
     }
-
-  } catch(e) {
+  } catch (e) {
     console.log(e);
   }
 }  
@@ -284,8 +301,8 @@ var cuiDI_String = "";
 
 
 
-
-function exportHTML(fileInput, cuiDesignatorText = "",orgName="",dist) {
+//function to export the html content to a word document with the CUI designator and footer
+async function exportHTML(fileInput, cuiDesignatorText = "",orgName="",dist) {
   // CUI Designator Block (Now in Footer)
   const cuiFooterContent = new Paragraph({
       children: [
@@ -359,7 +376,8 @@ function exportHTML(fileInput, cuiDesignatorText = "",orgName="",dist) {
 
   // Parse HTML content into Paragraph objects
   const parser = new DOMParser();
-  const htmlDoc = parser.parseFromString(fileInput.inputText, 'text/html');
+  var fi = await fileInput.unalteratedText;
+  const htmlDoc = parser.parseFromString(fi, 'text/html');
   const elements = htmlDoc.body.childNodes;
   const mainContent = [];
 
@@ -421,8 +439,9 @@ function exportHTML(fileInput, cuiDesignatorText = "",orgName="",dist) {
   });
 
   // Generate and Download Word File
-  Packer.toBlob(doc).then(blob => {
-      saveAs(blob, `${fileInput.fileTitle}.docx`);
+  Packer.toBlob(doc).then(async blob => {
+    var blow = await fileInput.filename
+      saveAs(blob, `${blow}.docx`);
   });
 }
 
@@ -546,20 +565,27 @@ async function lm_inference_TokenClasification(text,fileName="dummy") {
       notification.className = 'notification';
       notification.textContent = `PII Inference is ${Math.round((chunkIndex + 1) / wordChunks.length * 100)}% complete...`;
       Object.assign(notification.style, {
-        position: 'fixed',
-        bottom: '20px',
-        right: '20px',
         backgroundColor: '#333',
         color: '#fff',
         padding: '10px 20px',
         borderRadius: '8px',
         boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
         zIndex: '1000',
-        fontFamily: 'Arial, sans-serif'
+        fontFamily: 'Arial, sans-serif',
+        marginTop: '20px',
+        position: 'fixed',
+        top: '10px',
+        right: '10px'
       });
+     
+    
       const existingNotifications = document.getElementsByClassName('notification');
       for (let i = 0; i < existingNotifications.length; i++) {
-        document.body.removeChild(existingNotifications[i]);
+        try{
+           document.body.removeChild(existingNotifications[i]);
+        }catch (e) {
+          console.log("Error removing existing notification: ", e);
+        }
       }
       document.body.appendChild(notification);
 
@@ -597,6 +623,26 @@ async function lm_inference_TokenClasification(text,fileName="dummy") {
       const chunkWords = chunk.split(' ');
       let wordToLabelMap = new Map();
       
+      
+      //validate that if a credit card number label is found that it is followed by another credit card number label
+      //if not change the label to 'O'
+      for (let i = 0; i < predictionLabels.length; i++) {
+        //replace the label with 'O' if the next label is not a credit card number for B-CREDITCARDNUMBER
+        if (predictionLabels[i] === 'B-CREDITCARDNUMBER') {
+          if (predictionLabels[i + 1] !== 'I-CREDITCARDNUMBER') {
+            predictionLabels[i] = 'O';
+          }
+        }
+        //replace the label with 'O' if the next label is not a credit card number for I-CREDITCARDNUMBER
+        if (predictionLabels[i] === 'I-CREDITCARDNUMBER') {
+          if (predictionLabels[i + 1] !== 'I-CREDITCARDNUMBER') {
+            predictionLabels[i] = 'O';
+          }
+        }
+      }
+
+
+      
       // Build a mapping of words to labels
       let tokenIndex = 1; // Start at 1 to skip CLS token
       for (let wordIdx = 0; wordIdx < chunkWords.length; wordIdx++) {
@@ -619,30 +665,34 @@ async function lm_inference_TokenClasification(text,fileName="dummy") {
       let chunkProcessedText = '';
       //Build synthetic rplacement chunk too
       let chunkSyntheticReplacement = '';
+      
       for (let i = 0; i < chunkWords.length; i++) {
         const wordInfo = wordToLabelMap.get(currentWordIndex + i);
         if (!wordInfo) continue;
+
+        
         
         // Apply PII masking if needed
         if (wordInfo.label !== 'O') {
           chunkProcessedText += `[${wordInfo.label}] `;
-          chunkSyntheticReplacement += `[${wordInfo.label}] `;
+           //check to see if the word is present for the file name with the same label in sanatization_sub_keys if so use that replacment as the synthetic replacement
+           var found = sanatization_sub_keys.find(obj => obj.fName === fileName && obj.original === wordInfo.word && obj.type === wordInfo.label);
+           if (found) {
+             chunkSyntheticReplacement += `${found.replacement} `;
+           }else {
+ 
+ 
+             var replacementFunction = getFakerFunctionForTag(wordInfo.label);
+             var anonymizedText = replacementFunction(wordInfo.word);
+             //update the sanatization_sub_keys with object that show the original word and the replacement
+             sanatization_sub_keys.push({ fName:fileName, original: wordInfo.word, replacement: anonymizedText, type: wordInfo.label });
+             //add the anonymized text to the synthetic replacement
+             chunkSyntheticReplacement += `${anonymizedText} `;
+           }
         } else {
           chunkProcessedText += `${wordInfo.word} `;
-          //check to see if the word is present for the file name with the same label in sanatization_sub_keys if so use that replacment as the synthetic replacement
-          var found = sanatization_sub_keys.find(obj => obj.fName === fileName && obj.original === wordInfo.word && obj.type === wordInfo.label);
-          if (found) {
-            chunkSyntheticReplacement += `${found.replacement} `;
-          }else {
-
-
-            var replacementFunction = getFakerFunctionForTag(wordInfo.label);
-            var anonymizedText = replacementFunction(wordInfo.word);
-            //update the sanatization_sub_keys with object that show the original word and the replacement
-            sanatization_sub_keys.push({ fName:fileName, original: wordInfo.word, replacement: anonymizedText, type: wordInfo.label });
-            //add the anonymized text to the synthetic replacement
-            chunkSyntheticReplacement += `${anonymizedText} `;
-          }
+          chunkSyntheticReplacement += `${wordInfo.word} `; // Keep the original word for non-PII
+         
         }
       }
       syntheticReplacementText += chunkSyntheticReplacement;
@@ -700,21 +750,29 @@ async function lm_inference_TokenClasification(text,fileName="dummy") {
     const completionNotification = document.createElement('div');
     completionNotification.className = 'notification';
     completionNotification.textContent = 'PII Inference is complete!';
+   
     Object.assign(completionNotification.style, {
-      position: 'fixed',
-      bottom: '20px',
-      right: '20px',
-      backgroundColor: '#4caf50',
-      color: '#fff',
+      backgroundColor: 'green',
       padding: '10px 20px',
       borderRadius: '8px',
       boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
       zIndex: '1000',
-      fontFamily: 'Arial, sans-serif'
+      fontFamily: 'Arial, sans-serif',
+      marginTop: '20px',
+      position: 'fixed',
+      top: '10px',
+      right: '10px'
     });
+    
     const existingNotifications = document.getElementsByClassName('notification');
     for (let i = 0; i < existingNotifications.length; i++) {
-      document.body.removeChild(existingNotifications[i]);
+      try {
+        document.body.removeChild(existingNotifications[i]);
+      }
+      catch (e) {
+        console.log("Error removing existing notification: ", e);
+      }
+     
     }
     document.body.appendChild(completionNotification);
     setTimeout(() => {
@@ -800,7 +858,7 @@ const TurndownService = require('turndown').default;
 async function convertHtmlToMarkdown(file,useSubstitutions = false) {
     const turndownService = new TurndownService();
     if(useSubstitutions){
-      const fileSubstitutions = await file.substitutionHTML;
+      const fileSubstitutions = await file.substituionText;
       return turndownService.turndown(fileSubstitutions);
     }else{
     const fileContentFool = await file.html; // Await the promise if file is a promise
@@ -808,6 +866,8 @@ async function convertHtmlToMarkdown(file,useSubstitutions = false) {
     return turndownService.turndown(fileContentFool);
     }
 }
+
+
 
 export let inference = lm_inference 
 export let columnNames = EMOJI_DEFAULT_DISPLAY

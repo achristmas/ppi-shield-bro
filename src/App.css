@@ -31,12 +31,188 @@
   color: #61dafb;
 }
 
-.notification {
-  background-color: #f2f2f2;
-  color: #000;
-  text-align: center;
-  border: 2px solid #4CAF50;
+/* textarea styles */
+.App-textarea {
+  width: 80%;
+  height: 200px;
+  border: none;
   padding: 10px;
-  margin: 10px;
-  border-radius: 5px;
+  font-size: 16px;
+  font-family: 'Courier New', Courier, monospace;
+  resize: none; /* Prevents resizing */
+  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
 }
+/* Add a hover effect to the textarea */
+.App-textarea:hover {
+  box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.2);
+}
+/* Add a focus effect to the textarea */
+.App-textarea:focus {
+  outline: none; /* Remove default outline */
+  box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.5); /* Add a stronger shadow */
+}
+/* Add a transition effect for smoothness */
+.App-textarea {
+  transition: box-shadow 0.3s ease; /* Smooth transition for shadow */
+}
+/* Add a transition effect for smoothness */
+.App-textarea:hover,
+.App-textarea:focus {
+  transition: box-shadow 0.3s ease; /* Smooth transition for shadow */
+}
+/* Modern notification styling */
+.notification {
+  display: flex;
+  align-items: center;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  max-width: 350px;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 0 1px rgba(0, 0, 0, 0.1);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow: hidden;
+  z-index: 1000;
+  backdrop-filter: blur(10px);
+  transform-origin: top right;
+  animation: notificationEnter 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.notification-hiding {
+  animation: notificationExit 0.5s forwards;
+  pointer-events: none;
+}
+
+.notification-icon {
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notification-content {
+  flex: 1;
+  margin-right: 16px;
+  font-weight: 500;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  transition: opacity 0.2s, background-color 0.2s;
+}
+
+.notification-close:hover {
+  opacity: 1;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.notification-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background-color: rgba(255, 255, 255, 0.3);
+  transition: width 5s linear;
+}
+
+/* Type-specific styling */
+.notification-info {
+  background-color: rgba(58, 130, 246, 0.95);
+  color: white;
+}
+
+.notification-success {
+  background-color: rgba(34, 197, 94, 0.95);
+  color: white;
+}
+
+.notification-warning {
+  background-color: rgba(245, 158, 11, 0.95);
+  color: white;
+}
+
+.notification-error {
+  background-color: rgba(239, 68, 68, 0.95);
+  color: white;
+}
+
+.table-container {
+  max-height: 70vh; /* Adjust the height as needed */
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Custom scrollbar styles */
+.table-container::-webkit-scrollbar {
+  width: 12px;
+}
+
+.table-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 8px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 8px;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* For dark mode support */
+@media (prefers-color-scheme: dark) {
+  .notification {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 1px rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* Animations */
+@keyframes notificationEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes notificationExit {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+/* Stacking multiple notifications */
+.notification + .notification {
+  margin-top: 70px;
+}
+
+
+

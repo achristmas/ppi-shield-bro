@@ -1,6 +1,6 @@
 {
-  "short_name": "Emotion",
-  "name": "Inference with Transformers in the Browser",
+  "short_name": "PIIShield",
+  "name": "PII Inference Transformers in the Browser",
   "icons": [],
   "start_url": ".",
   "display": "standalone",

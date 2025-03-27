@@ -27,7 +27,8 @@ import {
   Menu,
   MenuItem,
   Collapse,
-  IconButton
+  IconButton ,
+  ListItemIcon
 } from '@mui/material';
 import { Download as DownloadIcon, ContentCopy as ContentCopyIcon, ArrowDropDown as ArrowDropDownIcon, ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -36,9 +37,17 @@ import SecurityIcon from '@mui/icons-material/Security';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import InfoIcon from '@mui/icons-material/Info';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import { PDFDocument } from 'pdf-lib';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import CloseIcon from '@mui/icons-material/Close';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import LockIcon from '@mui/icons-material/Lock';
+import { Settings as SettingsIcon, Logout, Person } from '@mui/icons-material';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -49,7 +58,7 @@ class TextInputArea extends React.Component {
       text: 'Enter text to classify PII, model trained on English text.',
       latency: 0.0,
       downloading: modelDownloadInProgress(),
-      fileResults: [], // Stores results of PII checks for each file
+      fileResults: JSON.parse(localStorage.getItem('fileResults')) || [], 
       analyzing: false, // Track analysis status
       pendingRequests: {}, // Store pending requests by requestId
       receivedInput: false, // Track if a user_input message was received
@@ -59,7 +68,26 @@ class TextInputArea extends React.Component {
       menuAnchor: null, // Anchor element for the dropdown menu
       expandedRow: null // Track the expanded row
     };
+
+    // Bind functions to the component's context
+    this.onSettings = this.onSettings.bind(this);
+    this.onClose = this.onClose.bind(this);
+    this.setMenuAnchor = this.setMenuAnchor.bind(this); // Bind setMenuAnchor
+    this.handleMenuClose = this.handleMenuClose.bind(this); // Bind handleMenuClose
   }
+
+  // Define the onSettings function
+  onSettings() {
+    console.log('Settings button clicked');
+    // Add your settings logic here
+  }
+
+   // Define the onClose function
+   onClose() {
+    console.log('Close button clicked');
+    // Add your close logic here
+  }
+
 
   componentDidMount() {
     this._isMounted = true;
@@ -73,6 +101,12 @@ class TextInputArea extends React.Component {
     this.notifyServiceReady();
     
     console.log('Event listener added and service ready notification sent');
+  }
+
+  componentDidUpdate(prevProps, prevState) {
+    if (prevState.fileResults !== this.state.fileResults) {
+      localStorage.setItem('fileResults', JSON.stringify(this.state.fileResults));
+    }
   }
 
   componentWillUnmount() {
@@ -90,6 +124,52 @@ class TextInputArea extends React.Component {
     
     console.log('Analysis service ready notification sent');
   }
+  //function to santatize arbitrary text and add it to the table with the inputed name;  the function will be called when 
+  //a message is received from the extension ; the displayed file name should include the domain of the origin of the messaage ; it will be in
+  // passed as input to the functionalong with the request data
+  // the requestId will be used to identify the message and update the table with the result of the analysis
+  // the requestId will be passed to the analyzeText function to identify the source of the text
+  // the requestId will be used to update the table with the result of the analysis
+  extensionProcessiong = async (requestId, text) => {
+    const fileNameKey = `Input_${requestId}.txt`; 
+    this.setState((prevState) => ({
+      fileResults: [...prevState.fileResults, { filename: fileNameKey, hasPII: 'Pending', sanitized: false }]
+    }));
+  
+    // Call the analyzeText function to process the text and update the table with the result
+    const result = await this.analyzeText(text, fileNameKey);
+    //add results to  newFileResults array 
+    let newFileResults = [...this.state.fileResults];
+    // Update the fileResults { 
+          //   filename: file.name, 
+          //   hasPII: "Error",
+          //   sanitized: 'No',
+          //   substituionText: "Error",
+          //   ProcessWordsArray: "Error",
+          //   MaskedText: "Error" ,
+          //   html: "Error", // Store the HTML data for further processing if needed
+          //   analytics: "Error" ,// Store the analytics results for further processing if needed
+          //   unalteratedText: "Error" // Store the unaltered text for reference
+          // }
+    newFileResults = newFileResults.map((file) => {
+      if (file.filename === fileNameKey) {
+        return {
+          ...file,
+          hasPII: result.containsPII ? 'Yes' : 'No',
+          sanitized: result.containsPII && result.sanitizedText ? 'Yes' : 'No',
+          substituionText: result.substituionText,
+          ProcessWordsArray: result.ProcessWordsArray,
+          MaskedText: result.resultData,
+          html: result.htmlData,
+          analytics: result.analytics,
+          unalteratedText: result.unalteratedText
+        };
+      }
+      return file;
+    });
+
+    
+  };
 
   handleMessage = async (event) => {
     // For security, verify the origin when in production
@@ -98,51 +178,75 @@ class TextInputArea extends React.Component {
     console.log('Received message:', event.data);
 
     // Handle different message types
-    if (event.data.type === 'USER_INPUT') {
-      const { text, requestId } = event.data;
-      
-      this.setState({ 
-        analyzing: true,
-        receivedInput: true // Mark that we've received input
-      });
+   
+      var text = '';
+      if (event.data.type == 'user_input') {
+        
+      var mySource =event.data.source_domain
+      //strip https:// and www. from the source domain or http://
+      mySource = mySource.replace(/https?:\/\//, '').replace(/www\./, '');
+      mySource = mySource.replace(/http?:\/\//, ''); //replace / with _ to avoid issues with file names
+      //create a requestid from the domain of the origin of the message and the current time
+      const requestId = `${mySource}-${Date.now()}`;
+        // If the message type is 'user_input', get the text from the event data
 
-      // Remove the "No files uploaded" row
-      removeNoFilesUploadedRow();
+        console.log('User input message received:', event.data);
 
-      // Post message to the sender saying that the message is received
-      window.postMessage({
-        type: 'RECEIVED_USER_INPUT',
-        requestId: requestId
-      }, '*');
+        text = event.data.text;     
+
+        //call processExtensionData promies and pass the request id and text
+        const result = await this.processExtensionData(requestId,text);
+
+        var myStuff = await result.analytics;
+        var otherStuffHigh = await myStuff.highRiskCount;
+        var otherStuffLow = await myStuff.lowRiskCount;
+        var otherStuffModerate = await myStuff.moderateRiskCount;
+        var otherStuffLabel = await myStuff.labelCount;
+        //construct an analytics object to store the results
+        var updatedmyStuff = {
+          highRiskCount: otherStuffHigh,
+          lowRiskCount: otherStuffLow,
+          moderateRiskCount: otherStuffModerate,
+          labelCount: otherStuffLabel,
+
+        }
+        
+        let newFileResults = [...this.state.fileResults];
+        
+        newFileResults.push({ 
+          filename: requestId, 
+          hasPII: result.containsPII ? true : false,
+          sanitized: 'Yes',// Assuming sanitization is successful if PII is found , if not its already clean
+          substituionText: result.substituionText,
+          ProcessWordsArray: result.ProcessWordsArray,
+          MaskedText: result.resultData ,// Store the raw result data for further processing if needed
+          html: result.htmlData, // Store the HTML data for further processing if needed
+          analytics: updatedmyStuff ,// Store the analytics results for further processing if needed
+          unalteratedText: result.unalteratedText // Store the unaltered text for reference
       
-      try {
-        const start = performance.now();
-        const result = await this.analyzeText(text, requestId);
-        const end = performance.now();
-        const latency = (end - start).toFixed(1);
-        
-        this.setState({ analyzing: false, latency });
-        
-        // Send the result back to the extension
-        window.postMessage({
-          type: 'PII_RESULT',
-          isPII: result.containsPII,
-          sanitizedText: result.sanitizedText,
-          requestId: requestId
-        }, '*');
-        
-      } catch (error) {
-        console.error('Error analyzing text:', error);
-        this.setState({ analyzing: false });
-        
-        // Send error response back to extension
-        window.postMessage({
-          type: 'PII_RESULT',
-          error: 'Analysis failed',
-          requestId: requestId
-        }, '*');
+        });
+         // Ensure the component is still mounted before updating the state
+        if (this._isMounted) {
+          this.setState({ 
+            analyzing: false, 
+            fileResults: newFileResults
+          });
+        }
+            // Post a message to the parent iframe
+          const message = {
+            type: 'analysis_complete',
+            requestId: requestId,
+            result: {
+              containsPII: result.containsPII,
+              analytics: updatedmyStuff,
+              sanitizedText: await result.substituionText,
+            },
+          };
+          window.parent.postMessage(message, '*');
+
       }
-    }
+
+    
   };
 
   checkModelStatus = () => {
@@ -154,6 +258,9 @@ class TextInputArea extends React.Component {
       clearInterval(this.timerID);
       this.notifyServiceReady();
     }
+
+   
+
   };
 
   // Function to load Mammoth.js from CDN
@@ -176,7 +283,7 @@ class TextInputArea extends React.Component {
       receivedInput: true // Mark that we've received input
     });
 
-    removeNoFilesUploadedRow(); // Ensure the "No files uploaded yet" row is removed
+    //removeNoFilesUploadedRow(); // Ensure the "No files uploaded yet" row is removed
 
     const start = performance.now();
 
@@ -207,7 +314,8 @@ class TextInputArea extends React.Component {
             ProcessWordsArray: result.ProcessWordsArray,
             MaskedText: result.resultData ,// Store the raw result data for further processing if needed
             html: result.htmlData, // Store the HTML data for further processing if needed
-            analytics: updatedmyStuff // Store the analytics results for further processing if needed
+            analytics: updatedmyStuff ,// Store the analytics results for further processing if needed
+            unalteratedText: result.unalteratedText // Store the unaltered text for reference
         
           });
         } catch (error) {
@@ -220,7 +328,8 @@ class TextInputArea extends React.Component {
             ProcessWordsArray: "Error",
             MaskedText: "Error" ,
             html: "Error", // Store the HTML data for further processing if needed
-            analytics: "Error" // Store the analytics results for further processing if needed
+            analytics: "Error", // Store the analytics results for further processing if needed
+            unalteratedText: "Error" // Store the unaltered text for reference
 
           });
         }
@@ -236,7 +345,8 @@ class TextInputArea extends React.Component {
             ProcessWordsArray: result.ProcessWordsArray,
             MaskedText: result.resultData ,
             html: result.htmlData, // Store the HTML data for further processing if needed
-            analytics: myStuffpd // Store the analytics data for further processing if needed
+            analytics: myStuffpd ,// Store the analytics data for further processing if needed
+            unalteratedText: result.unalteratedText // Store the unaltered text for reference
           });
         } catch (error) {
           console.error(`Error processing ${file.name}:`, error);
@@ -248,7 +358,8 @@ class TextInputArea extends React.Component {
             ProcessWordsArray: "Error",
             MaskedText: "Error" ,
             html: "Error", // Store the HTML data for further processing if needed
-            analytics: "Error" // Store the analytics results for further processing if needed
+            analytics: "Error" ,// Store the analytics results for further processing if needed
+            unalteratedText: "Error" // Store the unaltered text for reference
           });
         }
       } else if (file && file.name.endsWith(".txt")) {
@@ -263,7 +374,8 @@ class TextInputArea extends React.Component {
             ProcessWordsArray: result.ProcessWordsArray,
             MaskedText: result.resultData ,
             html: result.htmlData, // Store the HTML data for further processing if needed
-            analytics: myStufftx // Store the analytics results for further processing if needed
+            analytics: myStufftx, // Store the analytics results for further processing if needed
+            unalteratedText: result.unalteratedText // Store the unaltered text for reference
           });
         } catch (error) {
           console.error(`Error processing ${file.name}:`, error);
@@ -274,7 +386,9 @@ class TextInputArea extends React.Component {
             substituionText: "Error",
             ProcessWordsArray: "Error",
             MaskedText: "Error" ,
-            html: "Error" // Store the HTML data for further processing if needed
+            html: "Error", // Store the HTML data for further processing if needed
+            analytics: "Error" ,// Store the analytics results for further processing if needed
+            unalteratedText: "Error" // Store the unaltered text for reference
           });
         }
       } else {
@@ -295,6 +409,26 @@ class TextInputArea extends React.Component {
       });
     }
   };
+
+  processExtensionData = async (requestId, text) => {
+    return new Promise((resolve, reject) => {
+      if (!text || !requestId) {
+        console.error('Invalid request data:', { requestId, text });
+        reject(new Error('Invalid request data'));
+      } else {
+          try {
+          // Call the extensionProcessing function to handle the text analysis
+          const result = this.analyzeText(text, requestId);
+          resolve(result);
+        } catch (error) {
+          console.error('Error processing extension data:', error);
+          reject(error);
+        }
+      }
+     
+    });
+  };
+
 
   processDocxFile = (file) => {
     return new Promise((resolve, reject) => {
@@ -382,7 +516,7 @@ class TextInputArea extends React.Component {
       //wrap the resultData.st // in a promise to ensure it is resolved before proceeding
       // do not call sanitize text just wrpa in promise 
       const substituionText = new Promise((resolve) => {
-        resolve(resultData.st);
+        resolve(resultData.sr);
       });
 
       // Process the words array for further analysis
@@ -407,6 +541,8 @@ class TextInputArea extends React.Component {
         });
       }
       );
+      //unalterated text
+      const unalteratedText = text;
 
        // Log the analytics object for debugging
       analytics.then(data => console.log('Analytics:', data));
@@ -418,7 +554,8 @@ class TextInputArea extends React.Component {
         ProcessWordsArray,
         htmlData,
         substitutionHTML,
-        analytics // Return the analytics results for further processing if needed
+        analytics,// Return the analytics results for further processing if needed
+        unalteratedText // Return the unaltered text for reference
       };
     } catch (error) {
       console.log('PII analysis error:', error);
@@ -504,14 +641,11 @@ class TextInputArea extends React.Component {
   };
 
   // Function to handle opening the dropdown menu
-  setMenuAnchor = (event) => {
+  setMenuAnchor(event) {
     this.setState({ menuAnchor: event.currentTarget });
-  };
+  }
 
-  // Function to handle closing the dropdown menu
-  handleMenuClose = () => {
-    this.setState({ menuAnchor: null });
-  };
+  
 
   // Function to handle row expansion
   handleRowExpand = (index) => {
@@ -521,8 +655,56 @@ class TextInputArea extends React.Component {
     }));
   };
 
+  handleMenuOpen = (event) => {
+    this.setState({ menuAnchor: event.currentTarget });
+  };
+
+  handleMenuClose() {
+    this.setState({ menuAnchor: null });
+  }
+  handleClearStorage = () => {
+    localStorage.clear();
+    // completed storage delete notification to the use
+    
+    const completionNotification = document.createElement('div');
+    completionNotification.className = 'notification';
+    completionNotification.textContent = 'Local storage cleared';
+   
+    Object.assign(completionNotification.style, {
+      backgroundColor: 'green',
+      padding: '10px 20px',
+      borderRadius: '8px',
+      boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+      zIndex: '1000',
+      fontFamily: 'Arial, sans-serif',
+      marginTop: '20px',
+      position: 'fixed',
+      top: '10px',
+      right: '10px'
+    });
+    
+    const existingNotifications = document.getElementsByClassName('notification');
+    for (let i = 0; i < existingNotifications.length; i++) {
+      try {
+        document.body.removeChild(existingNotifications[i]);
+      }
+      catch (e) {
+        console.log("Error removing existing notification: ", e);
+      }
+     
+    }
+    document.body.appendChild(completionNotification);
+    setTimeout(() => {
+      document.body.removeChild(completionNotification);
+    }, 5000);
+    //Update the state to reflect the changes 
+    this.setState({ fileResults: [] });
+
+    this.handleMenuClose();
+  };
+
   render() {
-    const { downloading, fileResults, latency, analyzing, receivedInput, showTextPopup, userInputText, sanitizedText, menuAnchor, expandedRow } = this.state;
+    const { downloading, fileResults, latency, analyzing, receivedInput, showTextPopup, userInputText, sanitizedText, menuAnchor, expandedRow,onClose, onSettings, setMenuAnchor, onProfile} = this.state;
 
     return (
       <Box sx={{ 
@@ -539,48 +721,172 @@ class TextInputArea extends React.Component {
               mb: 4
             }}
           >
-            <Box 
-              sx={{ 
-                p: 3, 
-                backgroundColor: '#1976d2',
-                color: 'white',
-                textAlign: 'center' // Center the title
+    <Box 
+      sx={{ 
+        p: 4, 
+        background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
+        color: 'white',
+        textAlign: 'left',
+        borderRadius: 2,
+        boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.2)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 3
+      }}
+    >
+      {/* Logo */}
+      <img 
+        src="/static/piishieldlogo3.png" 
+        alt="PII Shield Logo" 
+        style={{ 
+          width: 80, 
+          height: 80, 
+          objectFit: 'contain',
+          filter: 'drop-shadow(0px 2px 6px rgba(0,0,0,0.2))'
+        }} 
+      />
+
+      {/* Text Content */}
+      <Box>
+        <Typography 
+          variant="h4" 
+          fontWeight="700" 
+          sx={{ 
+            textTransform: 'uppercase', 
+            letterSpacing: '1px', 
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <Box 
+            component="span" 
+            sx={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: '2px',
+              transform: 'scale(1.2)',
+              transformOrigin: 'left center',
+            }}
+          >
+            <Box
+              sx={{
+                position: 'relative',
+                width: '1.3em',
+                height: '1.5em',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                clipPath: 'polygon(50% 0%, 100% 0, 100% 70%, 50% 100%, 0 70%, 0 0)',
+                background: 'linear-gradient(135deg, #4285F4, #0F52BA)',
+                boxShadow: '0 3px 6px rgba(0,0,0,0.16)',
+                border: '1px solid rgba(255,255,255,0.2)',
               }}
             >
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2 }}>
-                <DescriptionIcon fontSize="large" />
-                <Typography variant="h4" fontWeight="500">
-                  Document PII Classification
-                </Typography>
-              </Box>
-              <Typography variant="subtitle1" sx={{ opacity: 0.9, mt: 1 }}>
-                Scan documents for Personally Identifiable Information
+              <Typography
+                component="span"
+                variant="h4"
+                fontWeight="900"
+                sx={{
+                  position: 'absolute',
+                  top: '0.05em',
+                  color: '#ffffff',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                  fontSize: '1.1em',
+                }}
+              >
+                V
               </Typography>
             </Box>
+          </Box>
+          
+          <Box 
+            component="span" 
+            sx={{ 
+              background: 'linear-gradient(90deg, #ffffff, #fbbc04)', 
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              color: 'transparent',
+              paddingLeft: '7px',
+              paddingRight: '7px',
+            }}
+          >
+            iKelaAI
+          </Box>
+        </Typography>
+        
+        <Typography variant="subtitle1" sx={{ opacity: 0.9, mt: 1 }}>
+          Sensitive Data Scanning, Sanitization, and Risk Analysis  
+        </Typography>
+      </Box>
+
+      {/* Settings Button */}
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'flex-end', 
+          flexGrow: 1, 
+          pr: 2
+        }}
+      >
+        <IconButton
+          aria-label="settings"
+          onClick={this.handleMenuOpen}
+          sx={{ 
+            color: 'white', 
+            transition: '0.2s ease-in-out',
+            '&:hover': { color: '#fbbc04' }
+          }}
+        >
+          <SettingsIcon fontSize="large" />
+        </IconButton>
+
+        {/* Dropdown Menu */}
+        <Menu
+          anchorEl={this.state.menuAnchor}
+          open={Boolean(this.state.menuAnchor)}
+          onClose={this.handleMenuClose}
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          sx={{
+            '& .MuiPaper-root': {
+              background: 'linear-gradient(135deg, #2c3e50 0%, #34495e 100%)',
+              color: 'white',
+              borderRadius: 2,
+              boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.2)',
+              minWidth: 180,
+              mt: 1
+            }
+          }}
+        >
+          {/* <MenuItem onClick={onProfile} sx={{ '&:hover': { backgroundColor: '#1976d2' } }}>
+            <ListItemIcon><Person sx={{ color: 'white' }} /></ListItemIcon>
+            <Typography variant="body1">Profile</Typography>
+          </MenuItem>
+
+          <MenuItem onClick={onSettings} sx={{ '&:hover': { backgroundColor: '#1976d2' } }}>
+            <ListItemIcon><SettingsIcon sx={{ color: 'white' }} /></ListItemIcon>
+            <Typography variant="body1">Settings</Typography>
+          </MenuItem>
+
+          <Divider sx={{ bgcolor: 'rgba(255,255,255,0.2)' }} /> */}
+
+          <MenuItem onClick={this.handleClearStorage} sx={{ '&:hover': { backgroundColor: '#fbbc04' } }}>
+            <ListItemIcon><DeleteIcon sx={{ color: 'white' }} /></ListItemIcon>
+            <Typography variant="body1">Clear Local Storage</Typography>
+          </MenuItem>
+
+          {/* <MenuItem onClick={onClose} sx={{ '&:hover': { backgroundColor: '#d32f2f' } }}>
+            <ListItemIcon><Logout sx={{ color: 'white' }} /></ListItemIcon>
+            <Typography variant="body1">Logout</Typography>
+          </MenuItem> */}
+        </Menu>
+      </Box>
+    </Box>
 
             <CardContent sx={{ p: 4 }}>
-              <Grid container spacing={4}>
-                <Grid item xs={12}>
-                  <Box 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 2,
-                      py: 2,
-                      px: 3,
-                      backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                      borderRadius: 2,
-                      border: '1px solid rgba(25, 118, 210, 0.2)'
-                    }}
-                  >
-                    <SecurityIcon color="primary" />
-                    <Typography variant="body1">
-                      This application uses client-side processing to scan for 40 types of PII.
-                      Your data never leaves your device, ensuring complete privacy and security.
-                    </Typography>
-                  </Box>
-                </Grid>
-              </Grid>
+            
 
               {downloading && (
                 <Fade in={downloading}>
@@ -753,12 +1059,19 @@ class TextInputArea extends React.Component {
                                     size="small"
                                     onClick={async () => {
                                       var content = await convertHtmlToMarkdown(file);
-                                      navigator.clipboard.writeText(content);
+                                     
                                       if (navigator.clipboard) {
                                         navigator.clipboard.writeText(content).then(() => {
                                           console.log('Text copied to clipboard');
                                         }).catch(err => {
+                                        //post a clipboard mesage to the iframe parent 
                                           console.error('Could not copy text: ', err);
+                                          //postMessage to parent to copy message to clipboard
+                                          const message = {
+                                            type: 'clipboard_copy',
+                                            content: content
+                                          };
+                                          window.parent.postMessage(message, '*');
                                         });
                                       } else {
                                         alert('Clipboard API not supported');
@@ -790,13 +1103,20 @@ class TextInputArea extends React.Component {
                                         navigator.clipboard.writeText(content).then(() => {
                                           console.log('Text copied to clipboard');
                                         }).catch(err => {
-                                          console.error('Could not copy text: ', err);
+                                         //post a clipboard mesage to the iframe parent 
+                                         console.error('Could not copy text: ', err);
+                                         //postMessage to parent to copy message to clipboard
+                                         const message = {
+                                           type: 'clipboard_copy',
+                                           content: content
+                                         };
+                                         window.parent.postMessage(message, '*');
                                         });
                                       } else {
                                         alert('Clipboard API not supported');
                                       }
                                       this.handleMenuClose(); }}>
-                                      <ContentCopyIcon sx={{ mr: 1 }} /> Copy Markdown
+                                      <ContentCopyIcon sx={{ mr: 1 }} /> Copy as Markdown
                                     </MenuItem>
                                     <MenuItem onClick={ async() => { 
                                       var content = await exportHTML(file);
@@ -809,7 +1129,8 @@ class TextInputArea extends React.Component {
                                       // Create a temporary anchor element
                                       const a = document.createElement('a');
                                       a.href = url;
-                                      a.download = `${file.name || 'document'}.html`;
+                                      var myfNameTouse = await file.filename;
+                                      a.download = `${myfNameTouse || 'document'}.html`;
                                       
                                       // Append to the document, click it, and remove it
                                       document.body.appendChild(a);
@@ -833,7 +1154,8 @@ class TextInputArea extends React.Component {
                                       // Create a temporary anchor element
                                       const a = document.createElement('a');
                                       a.href = url;
-                                      a.download = `${file.name || 'document'}.md`;
+                                      var fileNameTU = await file.filename;
+                                      a.download = `${fileNameTU || 'document'}.md`;
                                       // Append to the document, click it, and remove it
                                       document.body.appendChild(a);
                                       a.click();
@@ -847,12 +1169,19 @@ class TextInputArea extends React.Component {
                                     </MenuItem>
                                     <MenuItem onClick={async() => { /* Your substitution markdown logic */
                                         var content = await convertHtmlToMarkdown(file,true);
-                                      navigator.clipboard.writeText(content);
+                                     
                                       if (navigator.clipboard) {
                                         navigator.clipboard.writeText(content).then(() => {
                                           console.log('Text copied to clipboard');
                                         }).catch(err => {
+                                          //post a clipboard mesage to the iframe parent 
                                           console.error('Could not copy text: ', err);
+                                          //postMessage to parent to copy message to clipboard
+                                          const message = {
+                                            type: 'clipboard_copy',
+                                            content: content
+                                          };
+                                          window.parent.postMessage(message, '*');
                                         });
                                       } else {
                                         alert('Clipboard API not supported');
@@ -869,7 +1198,8 @@ class TextInputArea extends React.Component {
                                       const url = URL.createObjectURL(blob);
                                       const a = document.createElement('a');
                                       a.href = url;
-                                      a.download = `${file.name || 'document'}.md`;
+                                      var fileNameTUos = await file.filename;
+                                      a.download = `${fileNameTUos || 'document'}.md`;
                                       document.body.appendChild(a);
                                       a.click();
                                       document.body.removeChild(a);
@@ -894,87 +1224,270 @@ class TextInputArea extends React.Component {
                                 </IconButton>
                               </TableCell>
                             </TableRow>
-                            <TableRow>
+                            <TableRow className="analytics-row">
                               <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
                                 <Collapse in={expandedRow === index} timeout="auto" unmountOnExit>
-                                  <Box margin={2}>
-                                    <Typography variant="h6" gutterBottom component="div">
-                                      Analytics:
-                                    </Typography>
-                                    <Divider sx={{ mb: 2 }} />
-                                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                                      Risk level of the documetent based on NIST 800-122 of High, Moderate and Low.  
-                                      High risk indicates that the document contains sensitive PII that could lead to identity theft or other serious consequences if disclosed. Moderate risk indicates that the document contains PII that could lead to some level of harm if disclosed, while low risk indicates that the document contains PII that is less likely to cause harm if disclosed.
-                                    </Typography>
-                                    {file.analytics ? (
-                                      <Box>
-                                        <Bar
-                                          data={{
-                                            labels: ['High Risk', 'Moderate Risk', 'Low Risk'],
-                                            datasets: [
-                                              {
-                                                label: 'Risk Level Count',
-                                                data: [
-                                                  file.analytics.highRiskCount,
-                                                  file.analytics.moderateRiskCount,
-                                                  file.analytics.lowRiskCount
-                                                ],
-                                                backgroundColor: [
-                                                  'rgba(255, 99, 132, 0.2)',
-                                                  'rgba(255, 206, 86, 0.2)',
-                                                  'rgba(75, 192, 192, 0.2)'
-                                                ],
-                                                borderColor: [
-                                                  'rgba(255, 99, 132, 1)',
-                                                  'rgba(255, 206, 86, 1)',
-                                                  'rgba(75, 192, 192, 1)'
-                                                ],
-                                                borderWidth: 1
-                                              }
-                                            ]
-                                          }}
-                                          options={{
-                                            responsive: true,
-                                            plugins: {
-                                             
-                                              title: {
-                                                display: false,
-                                                text: 'Risk Counts'
-                                              }
-                                            }
-                                          }}
-                                        />
-                                        <Bar
-                                          data={{
-                                            labels: Object.keys(file.analytics.labelCount),
-                                            datasets: [
-                                              {
-                                                label: 'Label Count',
-                                                data: Object.values(file.analytics.labelCount),
-                                                backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                                                borderColor: 'rgba(54, 162, 235, 1)',
-                                                borderWidth: 1
-                                              }
-                                            ]
-                                          }}
-                                          options={{
-                                            responsive: true,
-                                            plugins: {
-                                              legend: {
-                                                position: 'top'
-                                              },
-                                              title: {
-                                                display: true,
-                                                text: 'Label Count'
-                                              }
-                                            }
-                                          }}
-                                        />
-                                      </Box>
-                                    ) : (
-                                      <Typography variant="body2" color="text.secondary">
-                                        No analytics available
+                                  <Box 
+                                    sx={{ 
+                                      margin: 3, 
+                                      borderRadius: 2, 
+                                      boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                                      backgroundColor: 'white',
+                                      padding: 3,
+                                      border: '1px solid rgba(0,0,0,0.08)'
+                                    }}
+                                  >
+                                    <Box display="flex" alignItems="center" mb={2}>
+                                      <Typography 
+                                        variant="h6" 
+                                        component="div" 
+                                        sx={{ 
+                                          fontWeight: 600, 
+                                          color: '#2C3E50',
+                                          flexGrow: 1
+                                        }}
+                                      >
+                                        Document Risk Analysis
                                       </Typography>
+                                      
+                                      <Chip 
+                                        label={
+                                          file.analytics?.highRiskCount > 0 ? "High Risk" : 
+                                          file.analytics?.moderateRiskCount > 0 ? "Moderate Risk" : "Low Risk"
+                                        }
+                                        color={
+                                          file.analytics?.highRiskCount > 0 ? "error" : 
+                                          file.analytics?.moderateRiskCount > 0 ? "warning" : "success"
+                                        }
+                                        size="small"
+                                        sx={{ fontWeight: 500 }}
+                                      />
+                                    </Box>
+                                    
+                                    <Divider sx={{ mb: 3 }} />
+                                    
+                                    <Box sx={{ mb: 4, backgroundColor: '#F8F9FA', p: 2, borderRadius: 1 }}>
+                                      <Typography variant="body2" sx={{ color: '#495057', mb: 1, fontWeight: 500 }}>
+                                        NIST 800-122 Risk Classification
+                                      </Typography>
+                                      
+                                      <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                                        <Grid item xs={12} sm={4}>
+                                          <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                                            <Box 
+                                              sx={{ 
+                                                width: 8, 
+                                                height: 8, 
+                                                borderRadius: '50%', 
+                                                bgcolor: 'error.main', 
+                                                mt: 0.7, 
+                                                mr: 1.5 
+                                              }} 
+                                            />
+                                            <Typography variant="body2" color="text.secondary">
+                                              <Box component="span" sx={{ fontWeight: 600, color: 'error.main' }}>High Risk:</Box> Sensitive PII that could lead to identity theft or serious consequences if disclosed
+                                            </Typography>
+                                          </Box>
+                                        </Grid>
+                                        
+                                        <Grid item xs={12} sm={4}>
+                                          <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                                            <Box 
+                                              sx={{ 
+                                                width: 8, 
+                                                height: 8, 
+                                                borderRadius: '50%', 
+                                                bgcolor: 'warning.main', 
+                                                mt: 0.7, 
+                                                mr: 1.5 
+                                              }} 
+                                            />
+                                            <Typography variant="body2" color="text.secondary">
+                                              <Box component="span" sx={{ fontWeight: 600, color: 'warning.main' }}>Moderate Risk:</Box> PII that could cause moderate harm if disclosed
+                                            </Typography>
+                                          </Box>
+                                        </Grid>
+                                        
+                                        <Grid item xs={12} sm={4}>
+                                          <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                                            <Box 
+                                              sx={{ 
+                                                width: 8, 
+                                                height: 8, 
+                                                borderRadius: '50%', 
+                                                bgcolor: 'success.main', 
+                                                mt: 0.7, 
+                                                mr: 1.5 
+                                              }} 
+                                            />
+                                            <Typography variant="body2" color="text.secondary">
+                                              <Box component="span" sx={{ fontWeight: 600, color: 'success.main' }}>Low Risk:</Box> PII with minimal potential harm if disclosed
+                                            </Typography>
+                                          </Box>
+                                        </Grid>
+                                      </Grid>
+                                    </Box>
+                                    
+                                    {file.analytics ? (
+                                      <Grid container spacing={4}>
+                                        <Grid item xs={12} md={6}>
+                                          <Box sx={{ height: 250, mb: 2 }}>
+                                            <Typography 
+                                              variant="subtitle2" 
+                                              sx={{ 
+                                                mb: 1.5, 
+                                                fontWeight: 600, 
+                                                color: '#495057',
+                                                textAlign: 'left'
+                                              }}
+                                            >
+                                              Document Risk Distribution
+                                            </Typography>
+                                            <Bar
+                                              data={{
+                                                labels: ['High Risk', 'Moderate Risk', 'Low Risk'],
+                                                datasets: [
+                                                  {
+                                                    label: 'Risk Level Count',
+                                                    data: [
+                                                      file.analytics.highRiskCount,
+                                                      file.analytics.moderateRiskCount,
+                                                      file.analytics.lowRiskCount
+                                                    ],
+                                                    backgroundColor: [
+                                                      'rgba(239, 68, 68, 0.7)',
+                                                      'rgba(249, 168, 37, 0.7)',
+                                                      'rgba(52, 211, 153, 0.7)'
+                                                    ],
+                                                    borderColor: [
+                                                      'rgba(239, 68, 68, 1)',
+                                                      'rgba(249, 168, 37, 1)',
+                                                      'rgba(52, 211, 153, 1)'
+                                                    ],
+                                                    borderWidth: 1,
+                                                    borderRadius: 6
+                                                  }
+                                                ]
+                                              }}
+                                              options={{
+                                                responsive: true,
+                                                maintainAspectRatio: false,
+                                                plugins: {
+                                                  legend: {
+                                                    display: false
+                                                  }
+                                                },
+                                                scales: {
+                                                  y: {
+                                                    beginAtZero: true,
+                                                    grid: {
+                                                      display: true,
+                                                      color: 'rgba(0, 0, 0, 0.05)'
+                                                    }
+                                                  },
+                                                  x: {
+                                                    grid: {
+                                                      display: false
+                                                    }
+                                                  }
+                                                }
+                                              }}
+                                            />
+                                          </Box>
+                                        </Grid>
+                                        
+                                        <Grid item xs={12} md={6}>
+                                          <Box sx={{ height: 250, mb: 2 }}>
+                                            <Typography 
+                                              variant="subtitle2" 
+                                              sx={{ 
+                                                mb: 1.5, 
+                                                fontWeight: 600, 
+                                                color: '#495057',
+                                                textAlign: 'left'
+                                              }}
+                                            >
+                                              PII Type Distribution
+                                            </Typography>
+                                            <Bar
+                                              data={{
+                                                labels: Object.keys(file.analytics.labelCount).map(label => 
+                                                  label.length > 12 ? label.substring(0, 10) + '...' : label
+                                                ),
+                                                datasets: [
+                                                  {
+                                                    label: 'Count',
+                                                    data: Object.values(file.analytics.labelCount),
+                                                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                                                    borderColor: 'rgba(59, 130, 246, 1)',
+                                                    borderWidth: 1,
+                                                    borderRadius: 6
+                                                  }
+                                                ]
+                                              }}
+                                              options={{
+                                                responsive: true,
+                                                maintainAspectRatio: false,
+                                                plugins: {
+                                                  legend: {
+                                                    display: false
+                                                  },
+                                                  tooltip: {
+                                                    callbacks: {
+                                                      title: (context) => {
+                                                        const index = context[0].dataIndex;
+                                                        return Object.keys(file.analytics.labelCount)[index];
+                                                      }
+                                                    }
+                                                  }
+                                                },
+                                                scales: {
+                                                  y: {
+                                                    beginAtZero: true,
+                                                    grid: {
+                                                      display: true,
+                                                      color: 'rgba(0, 0, 0, 0.05)'
+                                                    }
+                                                  },
+                                                  x: {
+                                                    grid: {
+                                                      display: false
+                                                    }
+                                                  }
+                                                }
+                                              }}
+                                            />
+                                          </Box>
+                                        </Grid>
+                                      </Grid>
+                                    ) : (
+                                      <Box 
+                                        sx={{ 
+                                          display: 'flex', 
+                                          alignItems: 'center', 
+                                          justifyContent: 'center',
+                                          flexDirection: 'column',
+                                          py: 6,
+                                          backgroundColor: '#F8F9FA',
+                                          borderRadius: 2
+                                        }}
+                                      >
+                                        <AssessmentOutlinedIcon sx={{ fontSize: 48, color: '#CBD5E0', mb: 2 }} />
+                                        <Typography variant="body1" color="text.secondary" fontWeight={500}>
+                                          No analytics available for this document
+                                        </Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                          Run a scan to generate risk insights
+                                        </Typography>
+                                        <Button 
+                                          variant="outlined" 
+                                          size="small" 
+                                          startIcon={<PlayArrowIcon />}
+                                          sx={{ mt: 2 }}
+                                        >
+                                          Run Analysis
+                                        </Button>
+                                      </Box>
                                     )}
                                   </Box>
                                 </Collapse>
@@ -1039,6 +1552,7 @@ class TextInputArea extends React.Component {
         </Container>
 
         {showTextPopup && (
+          
           <Box 
             sx={{ 
               position: 'fixed', 
@@ -1052,33 +1566,254 @@ class TextInputArea extends React.Component {
               alignItems: 'center' 
             }}
           >
-            <Card sx={{ width: '80%', maxWidth: '600px', p: 4 }}>
-              <Typography variant="h6" gutterBottom>
-                Sanitize Text
-              </Typography>
-              <textarea
-                value={userInputText}
-                onChange={this.handleTextInputChange}
-                rows="10"
-                style={{ width: '100%', padding: '10px', fontSize: '16px', borderRadius: '4px', border: '1px solid #ccc' }}
-              />
-              <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
-                <Button variant="contained" color="primary" onClick={this.handleSanitizeText}>
-                  Sanitize Text
-                </Button>
-                <Button variant="outlined" color="secondary" onClick={this.toggleTextPopup}>
-                  Close
-                </Button>
-              </Box>
-              {sanitizedText && (
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="subtitle1">Sanitized Text:</Typography>
-                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', backgroundColor: '#f9f9f9', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                    {sanitizedText}
-                  </Typography>
-                </Box>
-              )}
-            </Card>
+ <Card 
+  sx={{ 
+    width: '90%', 
+    maxWidth: '700px', 
+    p: 0, 
+    borderRadius: '12px',
+    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1), 0 6px 10px rgba(0, 0, 0, 0.08)',
+    overflow: 'hidden'
+  }}
+>
+  {/* Header with gradient and icon */}
+  <Box 
+      sx={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        p: 2.5,
+        pb: 2,
+        background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 100%)',
+        color: 'white'
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        {/* User Settings Button */}
+        <IconButton 
+          onClick={this.onSettings} // Use this.onSettings
+          sx={{ 
+            color: 'rgba(255, 255, 255, 0.8)', 
+            backgroundColor: 'rgba(255, 255, 255, 0.2)', 
+            borderRadius: '8px', 
+            p: 1,
+            mr: 1.5,
+            '&:hover': { 
+              backgroundColor: 'rgba(255, 255, 255, 0.3)',
+              color: 'white' 
+            }
+          }}
+        >
+          <SettingsIcon sx={{ fontSize: 24 }} />
+        </IconButton>
+
+        {/* Existing Security Icon */}
+        <Box sx={{ 
+          backgroundColor: 'rgba(255, 255, 255, 0.2)', 
+          borderRadius: '8px', 
+          p: 1, 
+          display: 'flex' 
+        }}>
+          <SecurityIcon sx={{ fontSize: 24 }} />
+        </Box>
+        
+        <Typography variant="h6" sx={{ fontWeight: 600, margin: 0 }}>
+          PII Sanitizer
+        </Typography>
+      </Box>
+      
+      <IconButton 
+        onClick={onClose}
+        sx={{ 
+          color: 'rgba(255, 255, 255, 0.8)', 
+          '&:hover': { color: 'white' } 
+        }}
+      >
+        <CloseIcon />
+      </IconButton>
+    </Box>
+
+  {/* Body content with padding */}
+  <Box sx={{ p: 3 }}>
+    {/* Description with icon */}
+    <Box 
+      sx={{ 
+        mb: 2.5, 
+        p: 2, 
+        borderRadius: '8px', 
+        backgroundColor: 'rgba(25, 118, 210, 0.08)',
+        border: '1px solid rgba(25, 118, 210, 0.2)',
+        display: 'flex',
+        gap: 2
+      }}
+    >
+      <InfoOutlinedIcon sx={{ color: '#1976d2' }} />
+      <Typography variant="body2" color="text.secondary">
+        Enter text containing sensitive information. Our AI-powered engine will identify and redact personally identifiable information (PII) such as names, addresses, emails, and phone numbers.
+      </Typography>
+    </Box>
+
+    {/* Text area with styled border */}
+    <Box 
+      sx={{ 
+        position: 'relative', 
+        mb: 3,
+        borderRadius: '8px',
+        border: '1px solid rgba(0, 0, 0, 0.15)',
+        '&:hover': { 
+          border: '1px solid rgba(25, 118, 210, 0.5)' 
+        },
+        '&:focus-within': {
+          boxShadow: '0 0 0 2px rgba(25, 118, 210, 0.25)',
+          border: '1px solid #1976d2'
+        }
+      }}
+    >
+      <textarea
+        value={userInputText}
+        onChange={this.handleTextInputChange}
+        rows="8"
+        placeholder="Paste your text containing sensitive information here..."
+        style={{ 
+          width: '100%', 
+          padding: '16px', 
+          fontSize: '16px', 
+          borderRadius: '8px', 
+          border: 'none',
+          outline: 'none',
+          resize: 'vertical',
+          fontFamily: 'inherit',
+          backgroundColor: 'transparent'
+        }}
+      />
+    </Box>
+
+    {/* Action buttons */}
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+      <Button 
+        variant="contained" 
+        color="primary" 
+        size="large"
+        onClick={this.handleSanitizeText}
+        startIcon={<LockOutlinedIcon />}
+        sx={{ 
+          borderRadius: '8px', 
+          px: 3, 
+          py: 1.2,
+          boxShadow: '0 4px 10px rgba(25, 118, 210, 0.2)',
+          fontWeight: 600
+        }}
+      >
+        Sanitize Text
+      </Button>
+      <Button 
+        variant="outlined" 
+        color="inherit"
+        size="large" 
+        onClick={this.toggleTextPopup}
+        sx={{ 
+          borderRadius: '8px', 
+          px: 3,
+          borderColor: 'rgba(0, 0, 0, 0.15)',
+          color: 'text.secondary'
+        }}
+      >
+        Cancel
+      </Button>
+    </Box>
+
+    {/* Results section with animation and styled container */}
+    {sanitizedText && (
+      <Box 
+        sx={{ 
+          mt: 1, 
+          animation: 'fadeIn 0.4s ease-in-out',
+          '@keyframes fadeIn': {
+            '0%': { opacity: 0, transform: 'translateY(10px)' },
+            '100%': { opacity: 1, transform: 'translateY(0)' }
+          }
+        }}
+      >
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            mb: 1.5,
+            gap: 1
+          }}
+        >
+          <Box 
+            sx={{ 
+              width: 10, 
+              height: 10, 
+              borderRadius: '50%', 
+              backgroundColor: '#4caf50' 
+            }} 
+          />
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            Sanitized Result
+          </Typography>
+        </Box>
+        <Box 
+          sx={{ 
+            whiteSpace: 'pre-wrap', 
+            p: 2.5, 
+            borderRadius: '8px', 
+            backgroundColor: 'rgba(25, 118, 210, 0.04)',
+            border: '1px solid rgba(25, 118, 210, 0.15)',
+            position: 'relative',
+            mb: 1
+          }}
+        >
+          <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+            {sanitizedText}
+          </Typography>
+        </Box>
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            justifyContent: 'flex-end' 
+          }}
+        >
+          <Button 
+            size="small" 
+            startIcon={<ContentCopyIcon sx={{ fontSize: 16 }} />}
+            sx={{ 
+              textTransform: 'none', 
+              color: '#1976d2',
+              fontWeight: 500
+            }}
+          >
+            Copy to clipboard
+          </Button>
+        </Box>
+      </Box>
+    )}
+  </Box>
+
+  {/* Footer with branding - looks great in screenshots */}
+  <Box 
+    sx={{ 
+      borderTop: '1px solid rgba(0, 0, 0, 0.08)', 
+      p: 2, 
+      px: 3,
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'space-between',
+      backgroundColor: 'rgba(0, 0, 0, 0.02)'
+    }}
+  >
+    <Typography variant="caption" color="text.secondary">
+      Your data remains private. Processing happens locally.
+    </Typography>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+      <Typography variant="caption" color="primary" sx={{ fontWeight: 500 }}>
+        Secured with
+      </Typography>
+      <LockIcon sx={{ fontSize: 14, color: 'primary.main' }} />
+    </Box>
+  </Box>
+</Card>
           </Box>
         )}
       </Box>
