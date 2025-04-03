@@ -66,7 +66,11 @@ class TextInputArea extends React.Component {
       userInputText: '', // Store the user input text
       sanitizedText: '', // Store the sanitized text
       menuAnchor: null, // Anchor element for the dropdown menu
-      expandedRow: null // Track the expanded row
+      expandedRow: null, // Track the expanded row
+      isScrolledUp: false,
+      isScrolledDown: false,
+      menuAnchorSettings: null, // Anchor for the settings dropdown
+      menuAnchorActions: null  // Anchor for the actions dropdown
     };
 
     // Bind functions to the component's context
@@ -74,6 +78,7 @@ class TextInputArea extends React.Component {
     this.onClose = this.onClose.bind(this);
     this.setMenuAnchor = this.setMenuAnchor.bind(this); // Bind setMenuAnchor
     this.handleMenuClose = this.handleMenuClose.bind(this); // Bind handleMenuClose
+    this.scrollRef = React.createRef();
   }
 
   // Define the onSettings function
@@ -93,6 +98,7 @@ class TextInputArea extends React.Component {
     this._isMounted = true;
     this.timerID = setInterval(() => this.checkModelStatus(), 1000);
     this.loadMammothScript();
+    this.scrollRef.current.addEventListener('scroll', this.checkScroll);
     
     // Add event listener for messages from window.postMessage
     window.addEventListener('message', this.handleMessage);
@@ -114,6 +120,7 @@ class TextInputArea extends React.Component {
     clearInterval(this.timerID);
     // Remove event listener for messages
     window.removeEventListener('message', this.handleMessage);
+    this.scrollRef.current.removeEventListener('scroll', this.checkScroll);
   }
 
   notifyServiceReady = () => {
@@ -124,6 +131,16 @@ class TextInputArea extends React.Component {
     
     console.log('Analysis service ready notification sent');
   }
+
+  checkScroll = () => {
+    const container = this.scrollRef.current;
+    if (container) {
+      const isScrolledUp = container.scrollTop > 0;
+      const isScrolledDown = container.scrollTop + container.clientHeight < container.scrollHeight;
+      this.setState({ isScrolledUp, isScrolledDown });
+    }
+  };
+
   //function to santatize arbitrary text and add it to the table with the inputed name;  the function will be called when 
   //a message is received from the extension ; the displayed file name should include the domain of the origin of the messaage ; it will be in
   // passed as input to the functionalong with the request data
@@ -659,9 +676,26 @@ class TextInputArea extends React.Component {
     this.setState({ menuAnchor: event.currentTarget });
   };
 
-  handleMenuClose() {
+  handleMenuClose = () => {
     this.setState({ menuAnchor: null });
-  }
+  };
+
+  handleSettingsMenuOpen = (event) => {
+    this.setState({ menuAnchorSettings: event.currentTarget });
+  };
+
+  handleSettingsMenuClose = () => {
+    this.setState({ menuAnchorSettings: null });
+  };
+
+  handleActionsMenuOpen = (event) => {
+    this.setState({ menuAnchorActions: event.currentTarget });
+  };
+
+  handleActionsMenuClose = () => {
+    this.setState({ menuAnchorActions: null });
+  };
+
   handleClearStorage = () => {
     localStorage.clear();
     // completed storage delete notification to the use
@@ -704,7 +738,7 @@ class TextInputArea extends React.Component {
   };
 
   render() {
-    const { downloading, fileResults, latency, analyzing, receivedInput, showTextPopup, userInputText, sanitizedText, menuAnchor, expandedRow,onClose, onSettings, setMenuAnchor, onProfile} = this.state;
+    const { downloading, fileResults, latency, analyzing, receivedInput, showTextPopup, userInputText, sanitizedText, menuAnchor, expandedRow,onClose, onSettings, setMenuAnchor, onProfile, isScrolledUp, isScrolledDown} = this.state;
 
     return (
       <Box sx={{ 
@@ -832,7 +866,7 @@ class TextInputArea extends React.Component {
       >
         <IconButton
           aria-label="settings"
-          onClick={this.handleMenuOpen}
+          onClick={this.handleSettingsMenuOpen}
           sx={{ 
             color: 'white', 
             transition: '0.2s ease-in-out',
@@ -844,9 +878,9 @@ class TextInputArea extends React.Component {
 
         {/* Dropdown Menu */}
         <Menu
-          anchorEl={this.state.menuAnchor}
-          open={Boolean(this.state.menuAnchor)}
-          onClose={this.handleMenuClose}
+          anchorEl={this.state.menuAnchorSettings}
+          open={Boolean(this.state.menuAnchorSettings)}
+          onClose={this.handleSettingsMenuClose}
           anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
           sx={{
@@ -872,8 +906,13 @@ class TextInputArea extends React.Component {
 
           <Divider sx={{ bgcolor: 'rgba(255,255,255,0.2)' }} /> */}
 
-          <MenuItem onClick={this.handleClearStorage} sx={{ '&:hover': { backgroundColor: '#fbbc04' } }}>
-            <ListItemIcon><DeleteIcon sx={{ color: 'white' }} /></ListItemIcon>
+          <MenuItem
+            onClick={this.handleClearStorage}
+            sx={{ '&:hover': { backgroundColor: '#fbbc04' } }}
+          >
+            <ListItemIcon>
+              <DeleteIcon sx={{ color: 'white' }} />
+            </ListItemIcon>
             <Typography variant="body1">Clear Local Storage</Typography>
           </MenuItem>
 
@@ -978,7 +1017,8 @@ class TextInputArea extends React.Component {
               </Box>
 
               <Divider sx={{ my: 4 }} />
-
+              <div className="scrollable-popup" ref={this.scrollRef}>
+              {isScrolledUp && <div className="scroll-indicator top">▲ Scroll Up</div>}
               <Card 
                 variant="outlined" 
                 sx={{ 
@@ -986,6 +1026,7 @@ class TextInputArea extends React.Component {
                   overflow: 'hidden'
                 }}
               >
+              
                 <TableContainer>
                   <Table id="resultsTable" aria-label="File PII Classification">
                     <TableHead>
@@ -1084,7 +1125,7 @@ class TextInputArea extends React.Component {
                                   <Button 
                                     color="primary"
                                     size="primary"
-                                    onClick={this.setMenuAnchor}
+                                    onClick={this.handleActionsMenuOpen}
                                     sx={{ padding: '4px 8px' }}
                                   >
                                     <ArrowDropDownIcon />
@@ -1092,30 +1133,37 @@ class TextInputArea extends React.Component {
 
                                   {/* Dropdown Menu */}
                                   <Menu 
-                                    anchorEl={menuAnchor} 
-                                    open={Boolean(menuAnchor)} 
-                                    onClose={this.handleMenuClose}
+                                    anchorEl={this.state.menuAnchorActions}
+                                    open={Boolean(this.state.menuAnchorActions)}
+                                    onClose={this.handleActionsMenuClose}
                                   >
-                                    <MenuItem onClick={async () => { 
-                                      var content = await convertHtmlToMarkdown(file);
-                                     
-                                      if (navigator.clipboard) {
-                                        navigator.clipboard.writeText(content).then(() => {
-                                          console.log('Text copied to clipboard');
-                                        }).catch(err => {
-                                         //post a clipboard mesage to the iframe parent 
-                                         console.error('Could not copy text: ', err);
-                                         //postMessage to parent to copy message to clipboard
-                                         const message = {
-                                           type: 'clipboard_copy',
-                                           content: content
-                                         };
-                                         window.parent.postMessage(message, '*');
-                                        });
-                                      } else {
-                                        alert('Clipboard API not supported');
-                                      }
-                                      this.handleMenuClose(); }}>
+                                    <MenuItem
+                                      onClick={async () => {
+                                        var content = await convertHtmlToMarkdown(file);
+
+                                        if (navigator.clipboard) {
+                                          navigator.clipboard
+                                            .writeText(content)
+                                            .then(() => {
+                                              console.log('Text copied to clipboard');
+                                            })
+                                            .catch((err) => {
+                                              console.error('Could not copy text: ', err);
+                                              // Post a clipboard message to the iframe parent
+                                              const message = {
+                                                type: 'clipboard_copy',
+                                                content: content,
+                                              };
+                                              window.parent.postMessage(message, '*');
+                                            });
+                                        } else {
+                                          alert('Clipboard API not supported');
+                                        }
+
+                                        // Close the menu after the action
+                                        this.handleMenuClose();
+                                      }}
+                                    >
                                       <ContentCopyIcon sx={{ mr: 1 }} /> Copy as Markdown
                                     </MenuItem>
                                     <MenuItem onClick={ async() => { 
@@ -1527,7 +1575,8 @@ class TextInputArea extends React.Component {
                   </Table>
                 </TableContainer>
               </Card>
-
+              {isScrolledDown && <div className="scroll-indicator bottom">▼ Scroll Down</div>}
+             </div>
               {latency > 0 && (
                 <Box 
                   sx={{ 

@@ -544,7 +544,7 @@ async function lm_inference_TokenClasification(text,fileName="dummy") {
     const textForTokenization = cleanText.replace(/\s+/g, ' ').trim();
     
     // Split cleaned text into chunks (50 words per chunk)
-    const chunkSize = 50;
+    const chunkSize = 300;
     const words = textForTokenization.split(' ');
     const wordChunks = [];
     

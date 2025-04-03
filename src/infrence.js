@@ -140,25 +140,26 @@ async function lm_inference(text) {
   }
 }  
 
-async function infrenceStart(text){
-let newSession = ort.InferenceSession.create(model2, options);
-newSession.then(t => { 
-  		downLoadingModel = false;
-  		//warmup the VM
-  		for(var i = 0; i < 1; i++) {
-    			console.log("Inference warmup " + i);
-    			   lm_inference_TokenClasification(text).then(t => {
-                
-				 //if contains 'XXXXX' then the document has PII data and notify the user
-    				if (t.includes('XXXXX')) {
-     				 alert("The document contains PII data. Please remove the data before uploading.");
-    				}
-      });  
-		}
-	});
-   session = newSession; 
-}  
 
+
+  async function infrenceStart(text) {
+    let newSession = ort.InferenceSession.create(model2, options);
+    return newSession.then(t => {
+      downLoadingModel = false;
+      // Warmup the VM
+      for (var i = 0; i < 1; i++) {
+        console.log("Inference warmup " + i);
+        return lm_inference_TokenClasification(text).then(t => {
+          // If contains 'XXXXX' then the document has PII data and notify the user
+          if (t.includes('XXXXX')) {
+            alert("The document contains PII data. Please remove the data before uploading.");
+          }
+          // Return the sanitized text
+          return t;
+        });
+      }
+    });
+  }
 async function lm_inference_TokenClasification(text) {
   try {
       // Store special characters' positions before cleaning
